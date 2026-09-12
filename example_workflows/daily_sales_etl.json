@@ -1,0 +1,60 @@
+{
+  "name": "daily_sales_etl",
+  "description": "Extract, transform, validate, and conditionally notify - demonstrates task values, run_if, and the sql task type",
+  "schedule_cron": "0 2 * * *",
+  "tasks": [
+    {
+      "key": "extract",
+      "type": "shell",
+      "command": "echo 'pulling raw files into /data/raw'\necho \"ATLASFLOW_OUTPUT_JSON:{\\\"row_count\\\": 4213}\"",
+      "depends_on": [],
+      "params": {},
+      "retries": 0,
+      "timeout_seconds": 600
+    },
+    {
+      "key": "transform_spark",
+      "type": "spark_submit",
+      "command": "/jobs/transform_sales.py",
+      "depends_on": [
+        "extract"
+      ],
+      "params": {
+        "args": [
+          "--input",
+          "/data/raw",
+          "--output",
+          "/data/curated"
+        ]
+      },
+      "retries": 1,
+      "timeout_seconds": 3600
+    },
+    {
+      "key": "quality_check",
+      "type": "sql",
+      "command": "SELECT region, SUM(total_sales) as total FROM delta.`/data/curated` GROUP BY region",
+      "depends_on": [
+        "transform_spark"
+      ],
+      "params": {
+        "limit": 50
+      },
+      "retries": 0,
+      "timeout_seconds": 300
+    },
+    {
+      "key": "notify",
+      "type": "shell",
+      "command": "echo 'pipeline complete, upstream row_count was' $ATLASFLOW_UPSTREAM_JSON",
+      "depends_on": [
+        "quality_check"
+      ],
+      "run_if": "upstream['extract']['row_count'] > 0",
+      "params": {},
+      "retries": 0,
+      "timeout_seconds": 60
+    }
+  ],
+  "on_failure_webhook": null
+}

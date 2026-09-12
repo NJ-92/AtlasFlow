@@ -1,0 +1,211 @@
+version: "3.8"
+
+services:
+  # ---- metadata store: workflow/task/run history ----
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: orchestrator
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-orchestrator}
+      POSTGRES_DB: orchestrator
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U orchestrator"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ---- lakehouse storage (S3-compatible) ----
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-admin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-admin12345}
+    ports:
+      - "9000:9000"   # S3 API
+      - "9001:9001"   # web console
+    volumes:
+      - minio-data:/data
+
+  # ---- distributed compute (Spark cluster) ----
+  spark-master:
+    image: bitnami/spark:3.5
+    environment:
+      - SPARK_MODE=master
+    ports:
+      - "7077:7077"   # cluster port (spark-submit connects here)
+      - "8080:8080"   # Spark master web UI
+    volumes:
+      - ./spark_jobs:/jobs
+      - lake-data:/data
+
+  spark-worker-1:
+    image: bitnami/spark:3.5
+    environment:
+      - SPARK_MODE=worker
+      - SPARK_MASTER_URL=spark://spark-master:7077
+      - SPARK_WORKER_MEMORY=2G
+      - SPARK_WORKER_CORES=2
+    depends_on:
+      - spark-master
+    volumes:
+      - ./spark_jobs:/jobs
+      - lake-data:/data
+
+  spark-worker-2:
+    image: bitnami/spark:3.5
+    environment:
+      - SPARK_MODE=worker
+      - SPARK_MASTER_URL=spark://spark-master:7077
+      - SPARK_WORKER_MEMORY=2G
+      - SPARK_WORKER_CORES=2
+    depends_on:
+      - spark-master
+    volumes:
+      - ./spark_jobs:/jobs
+      - lake-data:/data
+
+  # add more spark-worker-N services (or `docker compose up --scale spark-worker-1=5`)
+  # to scale out compute horizontally — this is the "cluster autoscaling" analog.
+
+  # ---- BI tool connectivity: standard JDBC/ODBC endpoint for Tableau, PowerBI, DBeaver, etc. ----
+  # Connect any BI tool using the generic "Spark SQL" / Hive JDBC driver at:
+  #   jdbc:hive2://localhost:10000  (no auth configured by default - see SECURITY.md before exposing this)
+  spark-thrift:
+    image: bitnami/spark:3.5
+    command: >
+      /opt/bitnami/spark/sbin/start-thriftserver.sh
+      --master spark://spark-master:7077
+      --packages io.delta:delta-spark_2.12:3.2.0
+      --conf spark.sql.extensions=io.delta.sql.DeltaSparkSessionExtension
+      --conf spark.sql.catalog.spark_catalog=org.apache.spark.sql.delta.catalog.DeltaCatalog
+      --conf spark.hadoop.fs.s3a.endpoint=http://minio:9000
+      --conf spark.hadoop.fs.s3a.path.style.access=true
+      --hiveconf hive.server2.thrift.port=10000
+      --hiveconf hive.server2.thrift.bind.host=0.0.0.0
+    ports:
+      - "10000:10000"
+    depends_on:
+      - spark-master
+    volumes:
+      - ./spark_jobs:/jobs
+      - lake-data:/data
+
+  # ---- notebooks, connected to the Spark cluster ----
+  notebook:
+    image: jupyter/pyspark-notebook:latest
+    ports:
+      - "8888:8888"
+    environment:
+      - JUPYTER_ENABLE_LAB=yes
+      - SPARK_MASTER=spark://spark-master:7077
+      - MLFLOW_TRACKING_URI=http://mlflow:5000
+      - MLFLOW_S3_ENDPOINT_URL=http://minio:9000
+      - AWS_ACCESS_KEY_ID=${MINIO_ROOT_USER:-admin}
+      - AWS_SECRET_ACCESS_KEY=${MINIO_ROOT_PASSWORD:-admin12345}
+    volumes:
+      - ./notebooks:/home/jovyan/work
+    command: start-notebook.sh --NotebookApp.token='' --NotebookApp.password=''
+
+  # ---- ML experiment tracking + model registry (real MLflow, not a reimplementation) ----
+  mlflow:
+    image: ghcr.io/mlflow/mlflow:v2.14.1
+    command: >
+      bash -c "pip install boto3 psycopg2-binary >/dev/null &&
+      mlflow server --host 0.0.0.0 --port 5000
+      --backend-store-uri sqlite:////mlflow/mlflow.db
+      --default-artifact-root s3://mlflow/"
+    environment:
+      MLFLOW_S3_ENDPOINT_URL: http://minio:9000
+      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-admin}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:-admin12345}
+    ports:
+      - "5000:5000"
+    volumes:
+      - mlflow-data:/mlflow
+    depends_on:
+      - minio
+
+  # ---- the workflow orchestrator (this repo's custom code) ----
+  backend:
+    build: ./backend
+    environment:
+      DATABASE_URL: postgresql://orchestrator:${POSTGRES_PASSWORD:-orchestrator}@postgres:5432/orchestrator
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-orchestrator}
+      SPARK_MASTER_URL: spark://spark-master:7077
+      NOTEBOOK_OUTPUT_DIR: /data/notebook_runs
+      # --- security: override every one of these in a .env file before real use ---
+      ATLASFLOW_JWT_SECRET: ${ATLASFLOW_JWT_SECRET:-dev-only-insecure-secret-change-me}
+      ATLASFLOW_ENCRYPTION_KEY: ${ATLASFLOW_ENCRYPTION_KEY:-}
+      ATLASFLOW_ADMIN_BOOTSTRAP_PASSWORD: ${ATLASFLOW_ADMIN_BOOTSTRAP_PASSWORD:-atlasflow-admin}
+      ATLASFLOW_CORS_ORIGINS: ${ATLASFLOW_CORS_ORIGINS:-http://localhost:3000}
+      ATLASFLOW_JWT_EXPIRE_MINUTES: ${ATLASFLOW_JWT_EXPIRE_MINUTES:-480}
+      # --- data platform integrations available to every task ---
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+      MLFLOW_S3_ENDPOINT_URL: http://minio:9000
+      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-admin}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:-admin12345}
+      # Delta Lake packages auto-attached to every spark_submit task - see task_runners.py
+      SPARK_DELTA_PACKAGES: io.delta:delta-spark_2.12:3.2.0
+      # --- OIDC SSO (optional - unset means SSO is disabled, local login only) ---
+      ATLASFLOW_OIDC_ISSUER: ${ATLASFLOW_OIDC_ISSUER:-}
+      ATLASFLOW_OIDC_CLIENT_ID: ${ATLASFLOW_OIDC_CLIENT_ID:-}
+      ATLASFLOW_OIDC_CLIENT_SECRET: ${ATLASFLOW_OIDC_CLIENT_SECRET:-}
+      ATLASFLOW_OIDC_REDIRECT_URI: ${ATLASFLOW_OIDC_REDIRECT_URI:-http://localhost:8000/api/auth/sso/callback}
+      ATLASFLOW_FRONTEND_URL: ${ATLASFLOW_FRONTEND_URL:-http://localhost:3000}
+      # --- compute cost estimation (self-hosted, so this is an estimate, not real billing) ---
+      ATLASFLOW_COST_PER_WORKER_HOUR: ${ATLASFLOW_COST_PER_WORKER_HOUR:-0.40}
+      # --- SAML SSO (optional, alongside OIDC above) ---
+      ATLASFLOW_SAML_IDP_ENTITY_ID: ${ATLASFLOW_SAML_IDP_ENTITY_ID:-}
+      ATLASFLOW_SAML_IDP_SSO_URL: ${ATLASFLOW_SAML_IDP_SSO_URL:-}
+      ATLASFLOW_SAML_IDP_X509_CERT: ${ATLASFLOW_SAML_IDP_X509_CERT:-}
+      ATLASFLOW_SAML_BASE_URL: ${ATLASFLOW_SAML_BASE_URL:-http://localhost:8000}
+      # --- SCIM user provisioning (optional) ---
+      ATLASFLOW_SCIM_TOKEN: ${ATLASFLOW_SCIM_TOKEN:-}
+      # --- Stripe metered billing (optional - real payments, see SECURITY.md/BILLING notes) ---
+      ATLASFLOW_STRIPE_SECRET_KEY: ${ATLASFLOW_STRIPE_SECRET_KEY:-}
+      ATLASFLOW_STRIPE_PRICE_ID: ${ATLASFLOW_STRIPE_PRICE_ID:-}
+      ATLASFLOW_STRIPE_WEBHOOK_SECRET: ${ATLASFLOW_STRIPE_WEBHOOK_SECRET:-}
+      # --- autoscaler (optional - requires the docker.sock mount below, see SECURITY.md) ---
+      ATLASFLOW_AUTOSCALE_ENABLED: ${ATLASFLOW_AUTOSCALE_ENABLED:-false}
+      ATLASFLOW_AUTOSCALE_MIN_WORKERS: ${ATLASFLOW_AUTOSCALE_MIN_WORKERS:-0}
+      ATLASFLOW_AUTOSCALE_MAX_EXTRA_WORKERS: ${ATLASFLOW_AUTOSCALE_MAX_EXTRA_WORKERS:-4}
+      ATLASFLOW_AUTOSCALE_POLL_SECONDS: ${ATLASFLOW_AUTOSCALE_POLL_SECONDS:-20}
+      # --- Genie AI agent (optional - real Anthropic API integration, needs your own key) ---
+      ATLASFLOW_ANTHROPIC_API_KEY: ${ATLASFLOW_ANTHROPIC_API_KEY:-}
+      ATLASFLOW_GENIE_MODEL: ${ATLASFLOW_GENIE_MODEL:-claude-sonnet-4-5}
+      # --- Delta Sharing (real protocol server, used to build recipient profile/file URLs) ---
+      ATLASFLOW_SHARING_BASE_URL: ${ATLASFLOW_SHARING_BASE_URL:-http://localhost:8000}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mlflow:
+        condition: service_started
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./spark_jobs:/jobs
+      - ./notebooks:/notebooks
+      - lake-data:/data
+      # Only needed for the autoscaler (ATLASFLOW_AUTOSCALE_ENABLED=true). Grants the
+      # backend container control over the whole Docker host - see SECURITY.md before
+      # enabling. Comment this out if you don't use the autoscaler.
+      - /var/run/docker.sock:/var/run/docker.sock
+
+  # ---- web UI ----
+  frontend:
+    build: ./frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+
+volumes:
+  pgdata:
+  minio-data:
+  lake-data:
+  mlflow-data:

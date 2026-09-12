@@ -1,0 +1,3070 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>AtlasFlow — Workflow Orchestrator</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js" crossorigin></script>
+<style>
+  :root {
+    --bg: #12151A;
+    --panel: #1A1F27;
+    --panel-hi: #21272F;
+    --border: #2A3038;
+    --text: #D8DEE6;
+    --muted: #7C8794;
+    --amber: #E8A33D;
+    --green: #4FB286;
+    --red: #E8604C;
+    --blue: #5B9FE8;
+    --mono: 'IBM Plex Mono', monospace;
+    --sans: 'Inter', sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--sans); }
+  #root { height: 100vh; display: flex; flex-direction: column; }
+
+  .topbar {
+    height: 56px; display: flex; align-items: center; padding: 0 20px;
+    border-bottom: 1px solid var(--border); flex-shrink: 0;
+  }
+  .topbar .logo { font-family: var(--mono); font-weight: 600; font-size: 15px; letter-spacing: 0.5px; }
+  .topbar .logo .dot { color: var(--amber); }
+  .topbar .sub { margin-left: 12px; color: var(--muted); font-size: 12px; font-family: var(--mono); }
+
+  .layout { flex: 1; display: flex; overflow: hidden; }
+
+  .sidebar {
+    width: 280px; border-right: 1px solid var(--border); overflow-y: auto; flex-shrink: 0;
+    padding: 14px 10px;
+  }
+  .sidebar-header {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 4px 8px 12px; color: var(--muted); font-size: 11px; text-transform: uppercase;
+    letter-spacing: 0.08em; font-family: var(--mono);
+  }
+  .new-btn {
+    background: transparent; border: 1px solid var(--border); color: var(--text);
+    border-radius: 4px; padding: 3px 8px; font-size: 11px; cursor: pointer; font-family: var(--mono);
+  }
+  .new-btn:hover { border-color: var(--blue); color: var(--blue); }
+
+  .wf-item {
+    padding: 10px 10px; border-radius: 6px; cursor: pointer; margin-bottom: 2px;
+    border: 1px solid transparent;
+  }
+  .wf-item:hover { background: var(--panel); }
+  .wf-item.active { background: var(--panel-hi); border-color: var(--border); }
+  .wf-item .name { font-size: 13.5px; font-weight: 600; display: flex; align-items: center; gap: 6px; }
+  .wf-item .meta { font-size: 11px; color: var(--muted); margin-top: 3px; font-family: var(--mono); }
+  .status-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); flex-shrink: 0; }
+  .status-dot.success { background: var(--green); }
+  .status-dot.failed, .status-dot.upstream_failed { background: var(--red); }
+  .status-dot.running { background: var(--amber); animation: pulse 1.2s infinite; }
+  .status-dot.skipped { background: var(--muted); }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }
+
+  .main { flex: 1; overflow-y: auto; padding: 24px 28px; }
+  .empty-state { color: var(--muted); font-family: var(--mono); font-size: 13px; margin-top: 40px; text-align: center; }
+
+  .wf-title-row { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 4px; }
+  .wf-title { font-size: 20px; font-weight: 700; }
+  .wf-desc { color: var(--muted); font-size: 13px; margin-bottom: 18px; }
+  .actions { display: flex; gap: 8px; }
+  .btn {
+    background: var(--panel); border: 1px solid var(--border); color: var(--text);
+    padding: 6px 14px; border-radius: 5px; font-size: 12.5px; cursor: pointer; font-family: var(--sans); font-weight: 600;
+  }
+  .btn:hover { border-color: var(--blue); }
+  .btn.primary { background: var(--amber); color: #14171C; border-color: var(--amber); }
+  .btn.primary:hover { filter: brightness(1.1); }
+  .btn.danger:hover { border-color: var(--red); color: var(--red); }
+
+  .section-label { font-family: var(--mono); font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin: 22px 0 10px; }
+
+  .dag-panel { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 16px; overflow-x: auto; }
+
+  .runs-list { display: flex; flex-direction: column; gap: 6px; }
+  .run-row {
+    display: flex; align-items: center; gap: 10px; padding: 8px 12px; background: var(--panel);
+    border: 1px solid var(--border); border-radius: 6px; cursor: pointer; font-size: 12.5px;
+  }
+  .run-row:hover { border-color: var(--blue); }
+  .run-row.selected { border-color: var(--blue); background: var(--panel-hi); }
+  .badge {
+    font-family: var(--mono); font-size: 10.5px; padding: 2px 7px; border-radius: 10px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.04em;
+  }
+  .badge.success { background: rgba(79,178,134,0.15); color: var(--green); }
+  .badge.failed, .badge.upstream_failed { background: rgba(232,96,76,0.15); color: var(--red); }
+  .badge.running { background: rgba(232,163,61,0.15); color: var(--amber); }
+  .badge.pending { background: rgba(124,135,148,0.15); color: var(--muted); }
+  .badge.skipped { background: rgba(124,135,148,0.25); color: var(--text); }
+
+  .run-detail { margin-top: 14px; }
+  .task-row {
+    display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-left: 2px solid var(--border);
+    margin-left: 4px; font-size: 12.5px; font-family: var(--mono);
+  }
+  .task-row.success { border-left-color: var(--green); }
+  .task-row.failed, .task-row.upstream_failed { border-left-color: var(--red); }
+  .task-row.running { border-left-color: var(--amber); }
+  .task-row.skipped { border-left-color: var(--muted); opacity: 0.75; }
+
+  pre.logs {
+    background: #0E1116; border: 1px solid var(--border); border-radius: 6px; padding: 12px;
+    font-family: var(--mono); font-size: 11.5px; color: var(--muted); max-height: 280px; overflow: auto;
+    white-space: pre-wrap; margin-top: 8px;
+  }
+
+  .modal-backdrop {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.55); display: flex; align-items: center; justify-content: center; z-index: 10;
+  }
+  .modal {
+    width: 640px; max-height: 80vh; overflow-y: auto; background: var(--panel-hi); border: 1px solid var(--border);
+    border-radius: 8px; padding: 20px;
+  }
+  .modal h3 { margin-top: 0; }
+  textarea {
+    width: 100%; height: 320px; background: #0E1116; color: var(--text); border: 1px solid var(--border);
+    border-radius: 6px; font-family: var(--mono); font-size: 12px; padding: 10px; resize: vertical;
+  }
+  .modal .row { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
+  .err { color: var(--red); font-size: 12px; margin-top: 8px; font-family: var(--mono); }
+
+  .login-screen { height: 100vh; display: flex; align-items: center; justify-content: center; }
+  .login-card { width: 340px; background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 28px; }
+  .login-card .logo { font-family: var(--mono); font-weight: 600; font-size: 16px; margin-bottom: 4px; }
+  .login-card .sub { color: var(--muted); font-size: 12px; margin-bottom: 20px; font-family: var(--mono); }
+  .field { margin-bottom: 12px; }
+  .field label { display: block; font-size: 11px; color: var(--muted); margin-bottom: 4px; font-family: var(--mono); text-transform: uppercase; letter-spacing: 0.05em; }
+  .field input {
+    width: 100%; background: #0E1116; border: 1px solid var(--border); color: var(--text);
+    border-radius: 5px; padding: 8px 10px; font-size: 13px; font-family: var(--sans);
+  }
+  .field input:focus { outline: none; border-color: var(--blue); }
+
+  .nav-tabs { display: flex; flex-direction: column; gap: 1px; padding: 0 0 14px; border-bottom: 1px solid var(--border); margin-bottom: 14px; }
+  .nav-tab {
+    background: transparent; border: none; border-left: 2px solid transparent; color: var(--muted);
+    font-size: 12px; font-family: var(--mono); padding: 7px 10px; text-align: left; cursor: pointer;
+    display: block; width: 100%; border-radius: 0 4px 4px 0;
+  }
+  .nav-tab:hover { color: var(--text); background: var(--panel); }
+  .nav-tab.active { background: var(--panel-hi); color: var(--text); border-left-color: var(--amber); font-weight: 600; }
+
+  .breadcrumb { font-family: var(--mono); font-size: 12.5px; color: var(--muted); margin-bottom: 14px; }
+  .breadcrumb a { color: var(--blue); cursor: pointer; }
+  .breadcrumb .sep { margin: 0 6px; color: var(--border); }
+  .breadcrumb .current { color: var(--text); }
+
+  .user-chip {
+    display: flex; align-items: center; gap: 8px; margin-left: auto; font-size: 12px; font-family: var(--mono); color: var(--muted);
+  }
+  .role-pill {
+    padding: 1px 7px; border-radius: 10px; font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em;
+    background: rgba(91,159,232,0.15); color: var(--blue);
+  }
+  .logout-btn { background: none; border: none; color: var(--muted); cursor: pointer; font-family: var(--mono); font-size: 11px; text-decoration: underline; }
+
+  table.admin-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  table.admin-table th { text-align: left; color: var(--muted); font-family: var(--mono); font-size: 11px; text-transform: uppercase; padding: 6px 10px; border-bottom: 1px solid var(--border); }
+  table.admin-table td { padding: 7px 10px; border-bottom: 1px solid var(--border); font-family: var(--mono); }
+  .inline-form { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+  .inline-form input, .inline-form select {
+    background: #0E1116; border: 1px solid var(--border); color: var(--text); border-radius: 5px;
+    padding: 6px 10px; font-size: 12.5px; font-family: var(--sans);
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useRef, useCallback } = React;
+
+const API_BASE = window.API_BASE || "http://localhost:8000";
+
+function getToken() { return localStorage.getItem("atlasflow_token"); }
+function setSession(token, username, role) {
+  if (token) {
+    localStorage.setItem("atlasflow_token", token);
+    localStorage.setItem("atlasflow_user", JSON.stringify({ username, role }));
+  } else {
+    localStorage.removeItem("atlasflow_token");
+    localStorage.removeItem("atlasflow_user");
+  }
+}
+function getSessionUser() {
+  try { return JSON.parse(localStorage.getItem("atlasflow_user")); } catch { return null; }
+}
+
+async function api(path, opts = {}) {
+  const token = getToken();
+  const res = await fetch(API_BASE + path, {
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: "Bearer " + token } : {}),
+    },
+    ...opts,
+  });
+  if (res.status === 401) {
+    setSession(null);
+    window.location.reload();
+    throw new Error("Session expired");
+  }
+  if (!res.ok) throw new Error((await res.json()).detail || res.statusText);
+  return res.json();
+}
+
+async function apiUpload(path, formData) {
+  const token = getToken();
+  const res = await fetch(API_BASE + path, {
+    method: "POST",
+    headers: { ...(token ? { Authorization: "Bearer " + token } : {}) },
+    body: formData,
+  });
+  if (res.status === 401) { setSession(null); window.location.reload(); throw new Error("Session expired"); }
+  if (!res.ok) throw new Error((await res.json()).detail || res.statusText);
+  return res.json();
+}
+
+const EXAMPLE_WORKFLOW = {
+  name: "daily_sales_etl",
+  description: "Extract, transform, validate, and conditionally notify - demonstrates task values and run_if",
+  schedule_cron: "0 2 * * *",
+  on_failure_webhook: null,
+  tasks: [
+    { key: "extract", type: "shell", command: "echo 'pulling raw files into /data/raw'\necho \"ATLASFLOW_OUTPUT_JSON:{\\\"row_count\\\": 4213}\"", depends_on: [], params: {}, retries: 0, timeout_seconds: 600 },
+    { key: "transform_spark", type: "spark_submit", command: "/jobs/transform_sales.py", depends_on: ["extract"], params: { args: ["--input", "/data/raw", "--output", "/data/curated"] }, retries: 1, timeout_seconds: 3600 },
+    { key: "quality_check", type: "sql", command: "SELECT region, SUM(total_sales) as total FROM delta.`/data/curated` GROUP BY region", depends_on: ["transform_spark"], params: { limit: 50 }, retries: 0, timeout_seconds: 300 },
+    { key: "notify", type: "shell", command: "echo 'pipeline complete, row_count was' $ATLASFLOW_UPSTREAM_JSON", depends_on: ["quality_check"], run_if: "upstream['extract']['row_count'] > 0", params: {}, retries: 0, timeout_seconds: 60 },
+  ],
+};
+
+// --- layered layout for DAG rendering (mirrors the backend's topological_layers) ---
+function computeLayers(tasks) {
+  const byKey = Object.fromEntries(tasks.map(t => [t.key, t]));
+  const indeg = Object.fromEntries(tasks.map(t => [t.key, (t.depends_on || []).length]));
+  const dependents = {};
+  tasks.forEach(t => (t.depends_on || []).forEach(d => {
+    dependents[d] = dependents[d] || [];
+    dependents[d].push(t.key);
+  }));
+  let frontier = tasks.filter(t => indeg[t.key] === 0).map(t => t.key);
+  const layers = [];
+  const remaining = { ...indeg };
+  while (frontier.length) {
+    layers.push(frontier.map(k => byKey[k]));
+    const next = [];
+    frontier.forEach(k => (dependents[k] || []).forEach(dk => {
+      remaining[dk] -= 1;
+      if (remaining[dk] === 0) next.push(dk);
+    }));
+    frontier = next;
+  }
+  return layers;
+}
+
+function statusOf(taskKey, run) {
+  if (!run) return "pending";
+  const tr = (run.task_runs || []).find(t => t.task_key === taskKey);
+  return tr ? tr.status : "pending";
+}
+
+function DagGraph({ tasks, run }) {
+  const layers = computeLayers(tasks);
+  const colWidth = 190, rowHeight = 64, nodeW = 158, nodeH = 40;
+  const positions = {};
+  layers.forEach((layer, ci) => {
+    layer.forEach((t, ri) => {
+      positions[t.key] = { x: ci * colWidth + 20, y: ri * rowHeight + 20 };
+    });
+  });
+  const width = layers.length * colWidth + 20;
+  const height = Math.max(...layers.map(l => l.length)) * rowHeight + 20;
+  const colorFor = s => ({ success: "var(--green)", failed: "var(--red)", upstream_failed: "var(--red)", running: "var(--amber)", skipped: "var(--muted)", pending: "var(--border)" }[s] || "var(--border)");
+
+  return (
+    <svg width={width} height={height} style={{ minWidth: "100%" }}>
+      {tasks.map(t => (t.depends_on || []).map(dep => {
+        const from = positions[dep], to = positions[t.key];
+        if (!from || !to) return null;
+        const x1 = from.x + nodeW, y1 = from.y + nodeH / 2;
+        const x2 = to.x, y2 = to.y + nodeH / 2;
+        const mid = (x1 + x2) / 2;
+        const active = statusOf(t.key, run) === "running" || statusOf(dep, run) === "running";
+        return (
+          <path key={dep + "->" + t.key}
+            d={`M ${x1} ${y1} C ${mid} ${y1}, ${mid} ${y2}, ${x2} ${y2}`}
+            stroke={active ? "var(--amber)" : "var(--border)"} strokeWidth="1.5" fill="none"
+            strokeDasharray={active ? "5,4" : "none"}>
+            {active && <animate attributeName="stroke-dashoffset" from="18" to="0" dur="0.6s" repeatCount="indefinite" />}
+          </path>
+        );
+      }))}
+      {tasks.map(t => {
+        const p = positions[t.key];
+        if (!p) return null;
+        const status = statusOf(t.key, run);
+        return (
+          <g key={t.key} transform={`translate(${p.x},${p.y})`}>
+            <rect width={nodeW} height={nodeH} rx="6" fill="var(--panel-hi)" stroke={colorFor(status)} strokeWidth="1.5" />
+            <circle cx="14" cy={nodeH/2} r="4" fill={colorFor(status)} />
+            <text x="26" y={nodeH/2 - 3} fill="var(--text)" fontSize="12" fontFamily="IBM Plex Mono" fontWeight="600">{t.key}</text>
+            <text x="26" y={nodeH/2 + 12} fill="var(--muted)" fontSize="10" fontFamily="IBM Plex Mono">{t.type}</text>
+          </g>
+        );
+      })}
+    </svg>
+  );
+}
+
+function NewWorkflowModal({ onClose, onCreated }) {
+  const [text, setText] = useState(JSON.stringify(EXAMPLE_WORKFLOW, null, 2));
+  const [err, setErr] = useState("");
+  const submit = async () => {
+    try {
+      const payload = JSON.parse(text);
+      await api("/api/workflows", { method: "POST", body: JSON.stringify(payload) });
+      onCreated();
+    } catch (e) { setErr(e.message); }
+  };
+  return (
+    <div className="modal-backdrop" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="modal">
+        <h3>New workflow</h3>
+        <p style={{ color: "var(--muted)", fontSize: 12.5, marginTop: -6 }}>
+          Define a DAG as JSON: tasks reference each other by <code>key</code> in <code>depends_on</code>.
+          Task <code>type</code> is one of python / shell / spark_submit / sql / notebook.
+          Reference secrets as <code>{"{{secret:name}}"}</code> and upstream task values as
+          <code> {"{{task.key.field}}"}</code>. Add <code>run_if</code> (a Python expression, e.g.
+          <code> "upstream['extract']['row_count'] &gt; 0"</code>) to skip a task conditionally.
+          Set <code>on_failure_webhook</code> to a URL to get a POSTed JSON summary if a run fails.
+          For <code>sql</code> tasks, bind named <code>:paramName</code> tokens via
+          <code> params: {"{sql_params: {paramName: \"value\"}}"}</code>. Set
+          <code> cluster_policy_name</code> to attach a governed policy (see the Policies tab).
+        </p>
+        <textarea value={text} onChange={e => setText(e.target.value)} spellCheck="false" />
+        {err && <div className="err">{err}</div>}
+        <div className="row">
+          <button className="btn" onClick={onClose}>Cancel</button>
+          <button className="btn primary" onClick={submit}>Create workflow</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function LoginScreen({ onLogin }) {
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [err, setErr] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [oidcEnabled, setOidcEnabled] = useState(false);
+  const [samlEnabled, setSamlEnabled] = useState(false);
+
+  useEffect(() => {
+    api("/api/auth/sso/config").then(r => { setOidcEnabled(r.oidc_enabled); setSamlEnabled(r.saml_enabled); }).catch(() => {});
+    // handle a redirect back from an SSO callback: /?sso_token=...&username=...&role=...
+    const params = new URLSearchParams(window.location.search);
+    const ssoToken = params.get("sso_token");
+    const ssoError = params.get("sso_error");
+    if (ssoToken) {
+      setSession(ssoToken, params.get("username"), params.get("role"));
+      window.history.replaceState({}, "", window.location.pathname);
+      onLogin();
+    } else if (ssoError) {
+      setErr("SSO login failed: " + ssoError);
+      window.history.replaceState({}, "", window.location.pathname);
+    }
+  }, []);
+
+  const submit = async (e) => {
+    e.preventDefault();
+    setBusy(true); setErr("");
+    try {
+      const res = await fetch(API_BASE + "/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username, password }),
+      });
+      if (!res.ok) throw new Error((await res.json()).detail || "Login failed");
+      const data = await res.json();
+      setSession(data.access_token, data.username, data.role);
+      onLogin();
+    } catch (e2) { setErr(e2.message); } finally { setBusy(false); }
+  };
+
+  return (
+    <div className="login-screen">
+      <form className="login-card" onSubmit={submit}>
+        <div className="logo">ATLAS<span style={{ color: "var(--amber)" }}>·</span>FLOW</div>
+        <div className="sub">sign in to continue</div>
+        {(oidcEnabled || samlEnabled) && (
+          <React.Fragment>
+            {oidcEnabled && (
+              <button type="button" className="btn" style={{ width: "100%", marginBottom: 8 }}
+                      onClick={() => window.location.href = API_BASE + "/api/auth/sso/login"}>
+                Sign in with SSO (OIDC)
+              </button>
+            )}
+            {samlEnabled && (
+              <button type="button" className="btn" style={{ width: "100%", marginBottom: 8 }}
+                      onClick={() => window.location.href = API_BASE + "/api/auth/saml/login"}>
+                Sign in with SSO (SAML)
+              </button>
+            )}
+            <div style={{ textAlign: "center", color: "var(--muted)", fontSize: 11, marginBottom: 14, fontFamily: "IBM Plex Mono" }}>or use a local account</div>
+          </React.Fragment>
+        )}
+        <div className="field">
+          <label>Username</label>
+          <input value={username} onChange={e => setUsername(e.target.value)} autoFocus />
+        </div>
+        <div className="field">
+          <label>Password</label>
+          <input type="password" value={password} onChange={e => setPassword(e.target.value)} />
+        </div>
+        {err && <div className="err">{err}</div>}
+        <button className="btn primary" style={{ width: "100%", marginTop: 6 }} disabled={busy}>
+          {busy ? "Signing in..." : "Sign in"}
+        </button>
+        <div style={{ color: "var(--muted)", fontSize: 11, marginTop: 14, fontFamily: "IBM Plex Mono" }}>
+          First run? Default admin is <code>admin</code> / the password set via
+          <code> ATLASFLOW_ADMIN_BOOTSTRAP_PASSWORD</code> (default <code>atlasflow-admin</code>).
+          Change it immediately after signing in.
+        </div>
+      </form>
+    </div>
+  );
+}
+
+function SecretsPanel({ role }) {
+  const [secrets, setSecrets] = useState([]);
+  const [name, setName] = useState("");
+  const [value, setValue] = useState("");
+  const load = async () => setSecrets(await api("/api/secrets"));
+  useEffect(() => { load(); }, []);
+  const create = async () => {
+    if (!name || !value) return;
+    await api("/api/secrets", { method: "POST", body: JSON.stringify({ name, value }) });
+    setName(""); setValue(""); load();
+  };
+  const remove = async (id) => { await api(`/api/secrets/${id}`, { method: "DELETE" }); load(); };
+  return (
+    <div>
+      <div className="section-label">Secrets — reference in tasks as {"{{secret:name}}"}</div>
+      {role !== "viewer" && (
+        <div className="inline-form">
+          <input placeholder="name (e.g. snowflake_password)" value={name} onChange={e => setName(e.target.value)} />
+          <input placeholder="value" type="password" value={value} onChange={e => setValue(e.target.value)} />
+          <button className="btn primary" onClick={create}>Add / update</button>
+        </div>
+      )}
+      <table className="admin-table">
+        <thead><tr><th>Name</th><th>Created</th>{role === "admin" && <th></th>}</tr></thead>
+        <tbody>
+          {secrets.map(s => (
+            <tr key={s.id}>
+              <td>{s.name}</td>
+              <td style={{ color: "var(--muted)" }}>{s.created_at?.slice(0, 19).replace("T", " ")}</td>
+              {role === "admin" && <td><button className="btn danger" style={{ padding: "2px 8px" }} onClick={() => remove(s.id)}>delete</button></td>}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function UsersPanel() {
+  const [users, setUsers] = useState([]);
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [role, setRole] = useState("viewer");
+  const load = async () => setUsers(await api("/api/auth/users"));
+  useEffect(() => { load(); }, []);
+  const create = async () => {
+    if (!username || !password) return;
+    await api("/api/auth/users", { method: "POST", body: JSON.stringify({ username, password, role }) });
+    setUsername(""); setPassword(""); load();
+  };
+  return (
+    <div>
+      <div className="section-label">Users</div>
+      <div className="inline-form">
+        <input placeholder="username" value={username} onChange={e => setUsername(e.target.value)} />
+        <input placeholder="password" type="password" value={password} onChange={e => setPassword(e.target.value)} />
+        <select value={role} onChange={e => setRole(e.target.value)}>
+          <option value="viewer">viewer</option>
+          <option value="editor">editor</option>
+          <option value="admin">admin</option>
+        </select>
+        <button className="btn primary" onClick={create}>Create user</button>
+      </div>
+      <table className="admin-table">
+        <thead><tr><th>Username</th><th>Role</th><th>Active</th></tr></thead>
+        <tbody>
+          {users.map(u => (
+            <tr key={u.id}><td>{u.username}</td><td>{u.role}</td><td>{u.is_active ? "yes" : "no"}</td></tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function AuditPanel() {
+  const [logs, setLogs] = useState([]);
+  useEffect(() => { api("/api/audit-logs").then(setLogs); }, []);
+  return (
+    <div>
+      <div className="section-label">Audit log — last 200 actions</div>
+      <table className="admin-table">
+        <thead><tr><th>When</th><th>User</th><th>Action</th><th>Resource</th></tr></thead>
+        <tbody>
+          {logs.map(l => (
+            <tr key={l.id}>
+              <td style={{ color: "var(--muted)" }}>{l.timestamp?.slice(0, 19).replace("T", " ")}</td>
+              <td>{l.username || "—"}</td>
+              <td>{l.action}</td>
+              <td>{l.resource || "—"}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function Shell() {
+  const [authed, setAuthed] = useState(!!getToken());
+  const [user, setUser] = useState(getSessionUser());
+
+  if (!authed) {
+    return <LoginScreen onLogin={() => { setUser(getSessionUser()); setAuthed(true); }} />;
+  }
+
+  const logout = () => { setSession(null); setAuthed(false); };
+
+  return <App user={user} onLogout={logout} />;
+}
+
+function SimpleBarChart({ columns, rows }) {
+  // auto-charts the common "one label column + one numeric column" shape (e.g. group-by results)
+  const numericCol = columns.find(c => rows.every(r => !isNaN(parseFloat(r[c])) && r[c] !== null));
+  const labelCol = columns.find(c => c !== numericCol);
+  if (!numericCol || !labelCol || rows.length === 0 || rows.length > 25) return null;
+
+  const values = rows.map(r => parseFloat(r[numericCol]) || 0);
+  const max = Math.max(...values, 1);
+  const barH = 22, gap = 8, chartW = 480;
+
+  return (
+    <div style={{ marginTop: 18 }}>
+      <div className="section-label" style={{ marginTop: 0 }}>Auto-chart — {numericCol} by {labelCol}</div>
+      <svg width="100%" viewBox={`0 0 ${chartW + 140} ${rows.length * (barH + gap)}`}>
+        {rows.map((r, i) => {
+          const val = parseFloat(r[numericCol]) || 0;
+          const w = (val / max) * chartW;
+          const y = i * (barH + gap);
+          return (
+            <g key={i}>
+              <text x="0" y={y + barH / 2} dominant-baseline="central" fontSize="11" fontFamily="IBM Plex Mono" fill="var(--muted)">
+                {String(r[labelCol]).slice(0, 16)}
+              </text>
+              <rect x="130" y={y} width={Math.max(w, 2)} height={barH} rx="3" fill="var(--blue)" opacity="0.75" />
+              <text x={130 + w + 8} y={y + barH / 2} dominant-baseline="central" fontSize="11" fontFamily="IBM Plex Mono" fill="var(--text)">
+                {val.toLocaleString()}
+              </text>
+            </g>
+          );
+        })}
+      </svg>
+    </div>
+  );
+}
+
+function TableAccessModal({ table, onClose }) {
+  const [grants, setGrants] = useState([]);
+  const [username, setUsername] = useState("");
+  const load = async () => setGrants(await api(`/api/tables/${table.id}/grants`));
+  useEffect(() => { load(); }, []);
+  const grant = async () => {
+    if (!username) return;
+    await api(`/api/tables/${table.id}/grants`, { method: "POST", body: JSON.stringify({ username }) });
+    setUsername(""); load();
+  };
+  const revoke = async (id) => { await api(`/api/tables/grants/${id}`, { method: "DELETE" }); load(); };
+  return (
+    <div className="modal-backdrop" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="modal" style={{ width: 420 }}>
+        <h3>Access to "{table.name}"</h3>
+        <p style={{ color: "var(--muted)", fontSize: 12.5, marginTop: -6 }}>
+          This table is <b>restricted</b> — only its owner, admins, and users granted access below can read it.
+        </p>
+        <div className="inline-form">
+          <input placeholder="username" value={username} onChange={e => setUsername(e.target.value)} />
+          <button className="btn primary" onClick={grant}>Grant access</button>
+        </div>
+        <table className="admin-table">
+          <tbody>
+            {grants.map(g => (
+              <tr key={g.id}><td>{g.username}</td><td><button className="btn danger" style={{ padding: "2px 8px" }} onClick={() => revoke(g.id)}>revoke</button></td></tr>
+            ))}
+            {grants.length === 0 && <tr><td style={{ color: "var(--muted)" }}>No one granted yet</td></tr>}
+          </tbody>
+        </table>
+        <div className="row"><button className="btn" onClick={onClose}>Close</button></div>
+      </div>
+    </div>
+  );
+}
+
+function LineageModal({ table, onClose }) {
+  const [lineage, setLineage] = useState(null);
+  useEffect(() => { api(`/api/tables/${table.id}/lineage`).then(setLineage); }, []);
+  return (
+    <div className="modal-backdrop" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="modal" style={{ width: 420 }}>
+        <h3>Lineage — "{table.name}"</h3>
+        {!lineage ? <p style={{ color: "var(--muted)" }}>Loading...</p> : (
+          <React.Fragment>
+            <p style={{ color: "var(--muted)", fontSize: 12.5 }}>origin: {lineage.origin}</p>
+            <div className="section-label" style={{ marginTop: 10 }}>Upstream (derived from)</div>
+            {lineage.upstream.length === 0 && <p style={{ color: "var(--muted)", fontSize: 12.5 }}>none recorded</p>}
+            {lineage.upstream.map(u => <div key={u.id} style={{ fontFamily: "IBM Plex Mono", fontSize: 12.5 }}>← {u.name}</div>)}
+            <div className="section-label" style={{ marginTop: 10 }}>Downstream (tables derived from this)</div>
+            {lineage.downstream.length === 0 && <p style={{ color: "var(--muted)", fontSize: 12.5 }}>none recorded</p>}
+            {lineage.downstream.map(d => <div key={d.id} style={{ fontFamily: "IBM Plex Mono", fontSize: 12.5 }}>→ {d.name}</div>)}
+          </React.Fragment>
+        )}
+        <div className="row"><button className="btn" onClick={onClose}>Close</button></div>
+      </div>
+    </div>
+  );
+}
+
+function SecurityModal({ table, onClose }) {
+  const [security, setSecurity] = useState(null);
+  const [role, setRole] = useState("viewer");
+  const [filterExpr, setFilterExpr] = useState("");
+  const [maskColumn, setMaskColumn] = useState("");
+  const [unmaskRole, setUnmaskRole] = useState("admin");
+
+  const load = async () => setSecurity(await api(`/api/tables/${table.id}/security`));
+  useEffect(() => { load(); }, []);
+
+  const saveFilter = async () => {
+    await api(`/api/tables/${table.id}/row-filter`, { method: "POST", body: JSON.stringify({ role, filter_expr: filterExpr }) });
+    setFilterExpr(""); load();
+  };
+  const removeFilter = async (r) => {
+    await api(`/api/tables/${table.id}/row-filter`, { method: "POST", body: JSON.stringify({ role: r, filter_expr: null }) });
+    load();
+  };
+  const addMask = async () => {
+    if (!maskColumn) return;
+    await api(`/api/tables/${table.id}/column-mask`, { method: "POST", body: JSON.stringify({ column: maskColumn, unmask_role: unmaskRole }) });
+    setMaskColumn(""); load();
+  };
+  const removeMask = async (col) => {
+    await api(`/api/tables/${table.id}/column-mask/remove`, { method: "POST", body: JSON.stringify({ column: col }) });
+    load();
+  };
+
+  return (
+    <div className="modal-backdrop" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="modal" style={{ width: 480 }}>
+        <h3>Row/column security — "{table.name}"</h3>
+        <p style={{ color: "var(--muted)", fontSize: 12.5, marginTop: -6 }}>
+          Enforced server-side via query rewriting (Spark SQL subqueries) whenever this
+          table is read through the SQL tab, dashboards, Genie, or alerts — not a
+          client-side filter.
+        </p>
+
+        <div className="section-label" style={{ marginTop: 0 }}>Row filters (by role)</div>
+        <div className="inline-form">
+          <select value={role} onChange={e => setRole(e.target.value)}>
+            <option value="viewer">viewer</option><option value="editor">editor</option><option value="admin">admin</option>
+          </select>
+          <input placeholder="SQL boolean expression, e.g. region = 'public'" value={filterExpr} onChange={e => setFilterExpr(e.target.value)} style={{ flex: 1 }} />
+          <button className="btn primary" onClick={saveFilter}>Set</button>
+        </div>
+        {security && Object.entries(security.row_filters).map(([r, expr]) => (
+          <div key={r} style={{ fontSize: 12.5, fontFamily: "IBM Plex Mono", marginBottom: 4 }}>
+            {r}: {expr} <button className="btn danger" style={{ padding: "1px 6px", marginLeft: 6 }} onClick={() => removeFilter(r)}>remove</button>
+          </div>
+        ))}
+
+        <div className="section-label">Column masks</div>
+        <div className="inline-form">
+          <input placeholder="column name" value={maskColumn} onChange={e => setMaskColumn(e.target.value)} />
+          <span style={{ fontSize: 12, color: "var(--muted)", alignSelf: "center" }}>visible from role:</span>
+          <select value={unmaskRole} onChange={e => setUnmaskRole(e.target.value)}>
+            <option value="viewer">viewer</option><option value="editor">editor</option><option value="admin">admin</option>
+          </select>
+          <button className="btn primary" onClick={addMask}>Add</button>
+        </div>
+        {security && security.masked_columns.map(m => (
+          <div key={m.column} style={{ fontSize: 12.5, fontFamily: "IBM Plex Mono", marginBottom: 4 }}>
+            {m.column} — visible from {m.unmask_role}+ <button className="btn danger" style={{ padding: "1px 6px", marginLeft: 6 }} onClick={() => removeMask(m.column)}>remove</button>
+          </div>
+        ))}
+
+        <div className="row"><button className="btn" onClick={onClose}>Close</button></div>
+      </div>
+    </div>
+  );
+}
+
+function DataPanel({ role }) {
+  const [tables, setTables] = useState([]);
+  const [file, setFile] = useState(null);
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+  const [format, setFormat] = useState("csv");
+  const [visibility, setVisibility] = useState("public");
+  const [isFeatureTable, setIsFeatureTable] = useState(false);
+  const [entityKey, setEntityKey] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const [accessModalTable, setAccessModalTable] = useState(null);
+  const [lineageModalTable, setLineageModalTable] = useState(null);
+  const [securityModalTable, setSecurityModalTable] = useState(null);
+
+  const load = async () => setTables(await api("/api/tables"));
+  useEffect(() => { load(); }, []);
+
+  const upload = async () => {
+    if (!file || !name) { setErr("Pick a file and give the table a name"); return; }
+    setBusy(true); setErr("");
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      fd.append("name", name);
+      fd.append("description", description);
+      fd.append("file_format", format);
+      fd.append("visibility", visibility);
+      fd.append("is_feature_table", isFeatureTable);
+      fd.append("entity_key", entityKey);
+      await apiUpload("/api/tables/upload", fd);
+      setFile(null); setName(""); setDescription(""); setIsFeatureTable(false); setEntityKey("");
+      load();
+    } catch (e) { setErr(e.message); } finally { setBusy(false); }
+  };
+
+  const remove = async (id) => { await api(`/api/tables/${id}`, { method: "DELETE" }); load(); };
+  const toggleVisibility = async (t) => {
+    const next = t.visibility === "public" ? "restricted" : "public";
+    await api(`/api/tables/${t.id}/visibility?visibility=${next}`, { method: "POST" });
+    load();
+  };
+
+  return (
+    <div>
+      <div className="section-label">Data — onboard a file as a queryable table</div>
+      <p style={{ color: "var(--muted)", fontSize: 12.5, marginTop: -4 }}>
+        Upload a CSV/JSON/Parquet file; it's converted into a real Delta table and
+        registered under the name you give it — after that, reference it by name in the
+        SQL or Python tabs instead of a raw storage path. Mark it <b>restricted</b> to
+        control who can read it, or as a <b>feature table</b> to make it available in the
+        Feature Store tab.
+      </p>
+      {role !== "viewer" && (
+        <div className="inline-form">
+          <input type="file" onChange={e => setFile(e.target.files[0])} />
+          <input placeholder="table name" value={name} onChange={e => setName(e.target.value)} />
+          <input placeholder="description (optional)" value={description} onChange={e => setDescription(e.target.value)} />
+          <select value={format} onChange={e => setFormat(e.target.value)}>
+            <option value="csv">CSV</option>
+            <option value="json">JSON</option>
+            <option value="parquet">Parquet</option>
+          </select>
+          <select value={visibility} onChange={e => setVisibility(e.target.value)}>
+            <option value="public">Public</option>
+            <option value="restricted">Restricted</option>
+          </select>
+          <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12.5, color: "var(--muted)" }}>
+            <input type="checkbox" checked={isFeatureTable} onChange={e => setIsFeatureTable(e.target.checked)} /> feature table
+          </label>
+          {isFeatureTable && <input placeholder="entity key column (e.g. customer_id)" value={entityKey} onChange={e => setEntityKey(e.target.value)} />}
+          <button className="btn primary" onClick={upload} disabled={busy}>{busy ? "Onboarding..." : "Upload & onboard"}</button>
+        </div>
+      )}
+      {err && <div className="err">{err}</div>}
+      <table className="admin-table">
+        <thead><tr><th>Name</th><th>Rows</th><th>Visibility</th><th>Description</th><th></th></tr></thead>
+        <tbody>
+          {tables.map(t => (
+            <tr key={t.id}>
+              <td>{t.name}{t.is_feature_table && <span className="role-pill" style={{ marginLeft: 6 }}>feature</span>}</td>
+              <td style={{ color: "var(--muted)" }}>{t.row_count ?? "—"}</td>
+              <td>
+                {role !== "viewer" ? (
+                  <button className="btn" style={{ padding: "2px 8px" }} onClick={() => toggleVisibility(t)}>{t.visibility}</button>
+                ) : t.visibility}
+              </td>
+              <td style={{ color: "var(--muted)" }}>{t.description || "—"}</td>
+              <td style={{ whiteSpace: "nowrap" }}>
+                <button className="btn" style={{ padding: "2px 8px", marginRight: 4 }} onClick={() => setLineageModalTable(t)}>lineage</button>
+                {role === "admin" && <button className="btn" style={{ padding: "2px 8px", marginRight: 4 }} onClick={() => setSecurityModalTable(t)}>security</button>}
+                {t.visibility === "restricted" && role !== "viewer" && (
+                  <button className="btn" style={{ padding: "2px 8px", marginRight: 4 }} onClick={() => setAccessModalTable(t)}>access</button>
+                )}
+                {role === "admin" && <button className="btn danger" style={{ padding: "2px 8px" }} onClick={() => remove(t.id)}>delete</button>}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {tables.length === 0 && <div className="empty-state" style={{ marginTop: 10 }}>No tables onboarded yet</div>}
+      {accessModalTable && <TableAccessModal table={accessModalTable} onClose={() => setAccessModalTable(null)} />}
+      {lineageModalTable && <LineageModal table={lineageModalTable} onClose={() => setLineageModalTable(null)} />}
+      {securityModalTable && <SecurityModal table={securityModalTable} onClose={() => setSecurityModalTable(null)} />}
+    </div>
+  );
+}
+
+function VolumeAccessModal({ volume, onClose }) {
+  const [grants, setGrants] = useState([]);
+  const [username, setUsername] = useState("");
+  const load = async () => setGrants(await api(`/api/volumes/${volume.id}/grants`).catch(() => []));
+  useEffect(() => { load(); }, []);
+  const grant = async () => {
+    if (!username) return;
+    await api(`/api/volumes/${volume.id}/grants`, { method: "POST", body: JSON.stringify({ username }) });
+    setUsername(""); load();
+  };
+  const revoke = async (id) => { await api(`/api/volumes/grants/${id}`, { method: "DELETE" }); load(); };
+  return (
+    <div className="modal-backdrop" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="modal" style={{ width: 420 }}>
+        <h3>Access to "{volume.name}"</h3>
+        <p style={{ color: "var(--muted)", fontSize: 12.5, marginTop: -6 }}>This volume is <b>restricted</b> — grant access below.</p>
+        <div className="inline-form">
+          <input placeholder="username" value={username} onChange={e => setUsername(e.target.value)} />
+          <button className="btn primary" onClick={grant}>Grant access</button>
+        </div>
+        <table className="admin-table">
+          <tbody>
+            {grants.map(g => (
+              <tr key={g.id}><td>{g.username}</td><td><button className="btn danger" style={{ padding: "2px 8px" }} onClick={() => revoke(g.id)}>revoke</button></td></tr>
+            ))}
+            {grants.length === 0 && <tr><td style={{ color: "var(--muted)" }}>No one granted yet</td></tr>}
+          </tbody>
+        </table>
+        <div className="row"><button className="btn" onClick={onClose}>Close</button></div>
+      </div>
+    </div>
+  );
+}
+
+function VolumesPanel({ role }) {
+  const [volumes, setVolumes] = useState([]);
+  const [selected, setSelected] = useState(null);
+  const [path, setPath] = useState("");
+  const [entries, setEntries] = useState([]);
+  const [showNewVolume, setShowNewVolume] = useState(false);
+  const [newVolName, setNewVolName] = useState("");
+  const [newVolVisibility, setNewVolVisibility] = useState("public");
+  const [showMkdir, setShowMkdir] = useState(false);
+  const [mkdirName, setMkdirName] = useState("");
+  const [uploadFile, setUploadFile] = useState(null);
+  const [accessModalVolume, setAccessModalVolume] = useState(null);
+  const [err, setErr] = useState("");
+
+  const loadVolumes = async () => setVolumes(await api("/api/volumes"));
+  useEffect(() => { loadVolumes(); }, []);
+
+  const browse = async (volume, newPath) => {
+    setSelected(volume); setPath(newPath);
+    try { setEntries(await api(`/api/volumes/${volume.id}/browse?path=${encodeURIComponent(newPath)}`)); }
+    catch (e) { setErr(e.message); setEntries([]); }
+  };
+
+  const createVolume = async () => {
+    if (!newVolName) return;
+    try {
+      await api("/api/volumes", { method: "POST", body: JSON.stringify({ name: newVolName, visibility: newVolVisibility }) });
+      setShowNewVolume(false); setNewVolName(""); loadVolumes();
+    } catch (e) { setErr(e.message); }
+  };
+
+  const mkdir = async () => {
+    if (!mkdirName || !selected) return;
+    await api(`/api/volumes/${selected.id}/mkdir?path=${encodeURIComponent(path)}&name=${encodeURIComponent(mkdirName)}`, { method: "POST" });
+    setShowMkdir(false); setMkdirName(""); browse(selected, path);
+  };
+
+  const upload = async () => {
+    if (!uploadFile || !selected) return;
+    const fd = new FormData();
+    fd.append("file", uploadFile);
+    fd.append("path", path);
+    await apiUpload(`/api/volumes/${selected.id}/upload`, fd);
+    setUploadFile(null); browse(selected, path);
+  };
+
+  const download = async (entry) => {
+    const filePath = path ? `${path}/${entry.name}` : entry.name;
+    const res = await api(`/api/volumes/${selected.id}/download?path=${encodeURIComponent(filePath)}`);
+    window.open(res.url, "_blank");
+  };
+
+  const removeEntry = async (entry) => {
+    const filePath = path ? `${path}/${entry.name}` : entry.name;
+    await api(`/api/volumes/${selected.id}/object?path=${encodeURIComponent(filePath)}&is_dir=${entry.is_dir}`, { method: "DELETE" });
+    browse(selected, path);
+  };
+
+  const breadcrumbs = [selected?.name, ...path.split("/").filter(Boolean)];
+
+  if (!selected) {
+    return (
+      <div>
+        <div className="section-label" style={{ display: "flex", justifyContent: "space-between" }}>
+          <span>Volumes — browsable storage for arbitrary files</span>
+          {role !== "viewer" && <button className="new-btn" onClick={() => setShowNewVolume(true)}>+ new</button>}
+        </div>
+        <p style={{ color: "var(--muted)", fontSize: 12.5, marginTop: -4 }}>
+          Unlike the Data tab (tabular files → Delta tables), Volumes store any file type —
+          images, PDFs, model artifacts, logs — in a browsable folder structure.
+        </p>
+        {err && <div className="err">{err}</div>}
+        <table className="admin-table">
+          <thead><tr><th>Name</th><th>Visibility</th><th>Description</th><th></th></tr></thead>
+          <tbody>
+            {volumes.map(v => (
+              <tr key={v.id} style={{ cursor: "pointer" }}>
+                <td onClick={() => browse(v, "")}>{v.name}</td>
+                <td style={{ color: "var(--muted)" }}>{v.visibility}</td>
+                <td style={{ color: "var(--muted)" }}>{v.description || "—"}</td>
+                <td>
+                  {v.visibility === "restricted" && role !== "viewer" && (
+                    <button className="btn" style={{ padding: "2px 8px" }} onClick={() => setAccessModalVolume(v)}>access</button>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {volumes.length === 0 && <div className="empty-state" style={{ marginTop: 10 }}>No volumes yet</div>}
+
+        {showNewVolume && (
+          <div className="modal-backdrop" onClick={e => e.target === e.currentTarget && setShowNewVolume(false)}>
+            <div className="modal" style={{ width: 380 }}>
+              <h3>New volume</h3>
+              <div className="field"><label>Name</label><input value={newVolName} onChange={e => setNewVolName(e.target.value)} /></div>
+              <div className="field">
+                <label>Visibility</label>
+                <select value={newVolVisibility} onChange={e => setNewVolVisibility(e.target.value)} style={{ width: "100%" }}>
+                  <option value="public">Public</option>
+                  <option value="restricted">Restricted</option>
+                </select>
+              </div>
+              <div className="row">
+                <button className="btn" onClick={() => setShowNewVolume(false)}>Cancel</button>
+                <button className="btn primary" onClick={createVolume}>Create</button>
+              </div>
+            </div>
+          </div>
+        )}
+        {accessModalVolume && <VolumeAccessModal volume={accessModalVolume} onClose={() => setAccessModalVolume(null)} />}
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div className="section-label" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <span className="breadcrumb" style={{ marginBottom: 0 }}>
+          <a onClick={() => setSelected(null)}>Volumes</a>
+          {breadcrumbs.map((b, i) => (
+            <React.Fragment key={i}>
+              <span className="sep">/</span>
+              <a onClick={() => browse(selected, breadcrumbs.slice(1, i + 1).join("/"))} className={i === breadcrumbs.length - 1 ? "current" : ""}>{b}</a>
+            </React.Fragment>
+          ))}
+        </span>
+        <span>
+          {role !== "viewer" && (
+            <React.Fragment>
+              <button className="btn" style={{ marginRight: 6 }} onClick={() => setShowMkdir(true)}>Create directory</button>
+              <input type="file" style={{ display: "inline-block", width: 160, marginRight: 6 }} onChange={e => setUploadFile(e.target.files[0])} />
+              <button className="btn primary" onClick={upload} disabled={!uploadFile}>Upload</button>
+            </React.Fragment>
+          )}
+        </span>
+      </div>
+      <table className="admin-table">
+        <thead><tr><th>Name</th><th>Size</th><th>Last modified</th><th></th></tr></thead>
+        <tbody>
+          {entries.map(e => (
+            <tr key={e.name}>
+              <td style={{ cursor: e.is_dir ? "pointer" : "default", color: e.is_dir ? "var(--blue)" : "var(--text)" }}
+                  onClick={() => e.is_dir && browse(selected, path ? `${path}/${e.name}` : e.name)}>
+                {e.is_dir ? "📁 " : "📄 "}{e.name}
+              </td>
+              <td style={{ color: "var(--muted)" }}>{e.size != null ? `${(e.size / 1024).toFixed(1)} KB` : "—"}</td>
+              <td style={{ color: "var(--muted)" }}>{e.last_modified?.slice(0, 19).replace("T", " ") || "—"}</td>
+              <td style={{ whiteSpace: "nowrap" }}>
+                {!e.is_dir && <button className="btn" style={{ padding: "2px 8px", marginRight: 4 }} onClick={() => download(e)}>download</button>}
+                {role !== "viewer" && <button className="btn danger" style={{ padding: "2px 8px" }} onClick={() => removeEntry(e)}>delete</button>}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {entries.length === 0 && <div className="empty-state" style={{ marginTop: 10 }}>Empty</div>}
+
+      {showMkdir && (
+        <div className="modal-backdrop" onClick={e => e.target === e.currentTarget && setShowMkdir(false)}>
+          <div className="modal" style={{ width: 340 }}>
+            <h3>New directory</h3>
+            <input value={mkdirName} onChange={e => setMkdirName(e.target.value)} autoFocus />
+            <div className="row">
+              <button className="btn" onClick={() => setShowMkdir(false)}>Cancel</button>
+              <button className="btn primary" onClick={mkdir}>Create</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PoliciesPanel({ role }) {
+  const [policies, setPolicies] = useState([]);
+  const [showNew, setShowNew] = useState(false);
+  const [form, setForm] = useState({ name: "", max_timeout_seconds: "", max_retries: "", allowed_task_types: "" });
+  const [err, setErr] = useState("");
+
+  const load = async () => setPolicies(await api("/api/cluster-policies"));
+  useEffect(() => { load(); }, []);
+
+  const create = async () => {
+    if (!form.name) return;
+    try {
+      await api("/api/cluster-policies", {
+        method: "POST",
+        body: JSON.stringify({
+          name: form.name,
+          max_timeout_seconds: form.max_timeout_seconds ? parseInt(form.max_timeout_seconds) : null,
+          max_retries: form.max_retries ? parseInt(form.max_retries) : null,
+          allowed_task_types: form.allowed_task_types ? form.allowed_task_types.split(",").map(s => s.trim()) : null,
+        }),
+      });
+      setShowNew(false); setForm({ name: "", max_timeout_seconds: "", max_retries: "", allowed_task_types: "" });
+      load();
+    } catch (e) { setErr(e.message); }
+  };
+
+  const remove = async (id) => { await api(`/api/cluster-policies/${id}`, { method: "DELETE" }); load(); };
+
+  return (
+    <div>
+      <div className="section-label" style={{ display: "flex", justifyContent: "space-between" }}>
+        <span>Cluster policies — governed limits a workflow's tasks must stay within</span>
+        {role === "admin" && <button className="new-btn" onClick={() => setShowNew(true)}>+ new</button>}
+      </div>
+      <p style={{ color: "var(--muted)", fontSize: 12.5, marginTop: -4 }}>
+        AtlasFlow runs tasks against one shared Spark cluster rather than provisioning
+        per-job VM clusters, so a policy governs task-level limits (timeout, retries,
+        allowed task types) instead of instance types — same cost/security-governance
+        intent, adapted to the architecture. Attach a policy to a workflow via
+        <code> cluster_policy_name</code> in its JSON.
+      </p>
+      <table className="admin-table">
+        <thead><tr><th>Name</th><th>Max timeout</th><th>Max retries</th><th>Allowed types</th><th></th></tr></thead>
+        <tbody>
+          {policies.map(p => (
+            <tr key={p.id}>
+              <td>{p.name}</td>
+              <td style={{ color: "var(--muted)" }}>{p.max_timeout_seconds ?? "unlimited"}</td>
+              <td style={{ color: "var(--muted)" }}>{p.max_retries ?? "unlimited"}</td>
+              <td style={{ color: "var(--muted)" }}>{p.allowed_task_types?.join(", ") || "any"}</td>
+              <td>{role === "admin" && <button className="btn danger" style={{ padding: "2px 8px" }} onClick={() => remove(p.id)}>delete</button>}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {policies.length === 0 && <div className="empty-state" style={{ marginTop: 10 }}>No policies yet</div>}
+
+      {showNew && (
+        <div className="modal-backdrop" onClick={e => e.target === e.currentTarget && setShowNew(false)}>
+          <div className="modal">
+            <h3>New cluster policy</h3>
+            <div className="field"><label>Name</label><input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></div>
+            <div className="field"><label>Max task timeout (seconds, optional)</label><input value={form.max_timeout_seconds} onChange={e => setForm({ ...form, max_timeout_seconds: e.target.value })} /></div>
+            <div className="field"><label>Max retries (optional)</label><input value={form.max_retries} onChange={e => setForm({ ...form, max_retries: e.target.value })} /></div>
+            <div className="field"><label>Allowed task types (comma-separated, optional — blank = any)</label><input value={form.allowed_task_types} onChange={e => setForm({ ...form, allowed_task_types: e.target.value })} placeholder="sql, python" /></div>
+            {err && <div className="err">{err}</div>}
+            <div className="row">
+              <button className="btn" onClick={() => setShowNew(false)}>Cancel</button>
+              <button className="btn primary" onClick={create}>Create</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function GitReposPanel({ role }) {
+  const [repos, setRepos] = useState([]);
+  const [showNew, setShowNew] = useState(false);
+  const [form, setForm] = useState({ name: "", remote_url: "", branch: "main", pat_secret_name: "" });
+  const [statusModal, setStatusModal] = useState(null);
+  const [commitMsg, setCommitMsg] = useState("");
+  const [err, setErr] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const load = async () => setRepos(await api("/api/git-repos"));
+  useEffect(() => { load(); }, []);
+
+  const create = async () => {
+    if (!form.name || !form.remote_url) { setErr("Name and remote URL are required"); return; }
+    setBusy(true); setErr("");
+    try {
+      await api("/api/git-repos", { method: "POST", body: JSON.stringify(form) });
+      setShowNew(false); setForm({ name: "", remote_url: "", branch: "main", pat_secret_name: "" });
+      load();
+    } catch (e) { setErr(e.message); } finally { setBusy(false); }
+  };
+
+  const sync = async (r) => { setBusy(true); try { await api(`/api/git-repos/${r.id}/sync`, { method: "POST" }); load(); } finally { setBusy(false); } };
+  const remove = async (r) => { await api(`/api/git-repos/${r.id}`, { method: "DELETE" }); load(); };
+  const viewStatus = async (r) => { setStatusModal({ repo: r, status: await api(`/api/git-repos/${r.id}/status`) }); };
+  const commit = async () => {
+    if (!commitMsg || !statusModal) return;
+    setBusy(true);
+    try {
+      await api(`/api/git-repos/${statusModal.repo.id}/commit`, { method: "POST", body: JSON.stringify({ message: commitMsg }) });
+      setCommitMsg(""); viewStatus(statusModal.repo);
+    } catch (e) { setErr(e.message); } finally { setBusy(false); }
+  };
+
+  return (
+    <div>
+      <div className="section-label" style={{ display: "flex", justifyContent: "space-between" }}>
+        <span>Git — repos cloned into the shared notebooks folder</span>
+        {role !== "viewer" && <button className="new-btn" onClick={() => setShowNew(true)}>+ new</button>}
+      </div>
+      <p style={{ color: "var(--muted)", fontSize: 12.5, marginTop: -4 }}>
+        Real <code>git</code> clone/pull/commit/push via subprocess — AtlasFlow's
+        equivalent of Databricks Repos/Git folders. For private repos, reference a PAT
+        stored in the Secrets tab.
+      </p>
+      <table className="admin-table">
+        <thead><tr><th>Name</th><th>Branch</th><th>Last sync</th><th></th></tr></thead>
+        <tbody>
+          {repos.map(r => (
+            <tr key={r.id}>
+              <td>{r.name}</td>
+              <td style={{ color: "var(--muted)" }}>{r.branch}</td>
+              <td><span className={"badge " + (r.last_sync_status === "ok" ? "success" : r.last_sync_status === "error" ? "failed" : "pending")}>{r.last_sync_status}</span></td>
+              <td style={{ whiteSpace: "nowrap" }}>
+                {role !== "viewer" && <button className="btn" style={{ padding: "2px 8px", marginRight: 4 }} onClick={() => sync(r)} disabled={busy}>sync</button>}
+                <button className="btn" style={{ padding: "2px 8px", marginRight: 4 }} onClick={() => viewStatus(r)}>status</button>
+                {role === "admin" && <button className="btn danger" style={{ padding: "2px 8px" }} onClick={() => remove(r)}>delete</button>}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {repos.length === 0 && <div className="empty-state" style={{ marginTop: 10 }}>No repos cloned yet</div>}
+
+      {statusModal && (
+        <div className="modal-backdrop" onClick={e => e.target === e.currentTarget && setStatusModal(null)}>
+          <div className="modal" style={{ width: 480 }}>
+            <h3>{statusModal.repo.name}</h3>
+            {statusModal.status.cloned ? (
+              <React.Fragment>
+                <p style={{ fontSize: 12.5, fontFamily: "IBM Plex Mono", color: "var(--muted)" }}>{statusModal.status.last_commit}</p>
+                {statusModal.status.dirty ? (
+                  <React.Fragment>
+                    <pre className="logs">{statusModal.status.changed_files.join("\n")}</pre>
+                    {role !== "viewer" && (
+                      <div className="inline-form">
+                        <input placeholder="commit message" value={commitMsg} onChange={e => setCommitMsg(e.target.value)} style={{ flex: 1 }} />
+                        <button className="btn primary" onClick={commit} disabled={busy}>Commit & push</button>
+                      </div>
+                    )}
+                  </React.Fragment>
+                ) : <p style={{ color: "var(--muted)", fontSize: 12.5 }}>Clean — no changes</p>}
+              </React.Fragment>
+            ) : <p style={{ color: "var(--muted)" }}>Not cloned</p>}
+            {err && <div className="err">{err}</div>}
+            <div className="row"><button className="btn" onClick={() => setStatusModal(null)}>Close</button></div>
+          </div>
+        </div>
+      )}
+
+      {showNew && (
+        <div className="modal-backdrop" onClick={e => e.target === e.currentTarget && setShowNew(false)}>
+          <div className="modal">
+            <h3>Clone a repository</h3>
+            <div className="field"><label>Name (local folder)</label><input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></div>
+            <div className="field"><label>Remote URL</label><input value={form.remote_url} onChange={e => setForm({ ...form, remote_url: e.target.value })} placeholder="https://github.com/you/repo.git" /></div>
+            <div className="inline-form">
+              <input placeholder="branch" value={form.branch} onChange={e => setForm({ ...form, branch: e.target.value })} />
+              <input placeholder="PAT secret name (optional, for private repos)" value={form.pat_secret_name} onChange={e => setForm({ ...form, pat_secret_name: e.target.value })} />
+            </div>
+            {err && <div className="err">{err}</div>}
+            <div className="row">
+              <button className="btn" onClick={() => setShowNew(false)}>Cancel</button>
+              <button className="btn primary" onClick={create} disabled={busy}>{busy ? "Cloning..." : "Clone"}</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TokensPanel() {
+  const [tokens, setTokens] = useState([]);
+  const [availableScopes, setAvailableScopes] = useState([]);
+  const [showNew, setShowNew] = useState(false);
+  const [name, setName] = useState("");
+  const [selectedScopes, setSelectedScopes] = useState([]);
+  const [expiresInDays, setExpiresInDays] = useState("");
+  const [newToken, setNewToken] = useState(null);
+  const [err, setErr] = useState("");
+
+  const load = async () => setTokens(await api("/api/auth/tokens"));
+  useEffect(() => { load(); api("/api/auth/scopes").then(r => setAvailableScopes(r.scopes)); }, []);
+
+  const toggleScope = (s) => setSelectedScopes(selectedScopes.includes(s) ? selectedScopes.filter(x => x !== s) : [...selectedScopes, s]);
+
+  const create = async () => {
+    if (!name || selectedScopes.length === 0) { setErr("Name it and pick at least one scope"); return; }
+    try {
+      const t = await api("/api/auth/tokens", { method: "POST", body: JSON.stringify({ name, scopes: selectedScopes, expires_in_days: expiresInDays ? parseInt(expiresInDays) : null }) });
+      setNewToken(t.token);
+      setShowNew(false); setName(""); setSelectedScopes([]); setExpiresInDays("");
+      load();
+    } catch (e) { setErr(e.message); }
+  };
+
+  const revoke = async (t) => { await api(`/api/auth/tokens/${t.id}`, { method: "DELETE" }); load(); };
+
+  return (
+    <div>
+      <div className="section-label" style={{ display: "flex", justifyContent: "space-between" }}>
+        <span>Access tokens — scoped tokens, restricted below your own role</span>
+        <button className="new-btn" onClick={() => setShowNew(true)}>+ new</button>
+      </div>
+      <p style={{ color: "var(--muted)", fontSize: 12.5, marginTop: -4 }}>
+        A token can only narrow what you can already do — pick specific scopes (e.g.
+        "trigger workflows only") instead of full account access, for scripts/integrations
+        that shouldn't have your full permissions.
+      </p>
+      {newToken && (
+        <div className="dag-panel" style={{ marginBottom: 14 }}>
+          <div style={{ color: "var(--amber)", fontSize: 12.5, marginBottom: 6 }}>Copy this now — it won't be shown again:</div>
+          <pre className="logs">{newToken}</pre>
+        </div>
+      )}
+      <table className="admin-table">
+        <thead><tr><th>Name</th><th>Scopes</th><th>Expires</th><th>Last used</th><th></th></tr></thead>
+        <tbody>
+          {tokens.map(t => (
+            <tr key={t.id}>
+              <td>{t.name}</td>
+              <td style={{ color: "var(--muted)" }}>{t.scopes.join(", ")}</td>
+              <td style={{ color: "var(--muted)" }}>{t.expires_at ? t.expires_at.slice(0, 10) : "never"}</td>
+              <td style={{ color: "var(--muted)" }}>{t.last_used_at ? t.last_used_at.slice(0, 19).replace("T", " ") : "never"}</td>
+              <td><button className="btn danger" style={{ padding: "2px 8px" }} onClick={() => revoke(t)}>revoke</button></td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {tokens.length === 0 && <div className="empty-state" style={{ marginTop: 10 }}>No tokens yet</div>}
+
+      {showNew && (
+        <div className="modal-backdrop" onClick={e => e.target === e.currentTarget && setShowNew(false)}>
+          <div className="modal">
+            <h3>New access token</h3>
+            <div className="field"><label>Name</label><input value={name} onChange={e => setName(e.target.value)} /></div>
+            <div className="section-label" style={{ marginTop: 0 }}>Scopes</div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
+              {availableScopes.map(s => (
+                <label key={s} style={{ fontSize: 12, fontFamily: "IBM Plex Mono", color: "var(--muted)" }}>
+                  <input type="checkbox" checked={selectedScopes.includes(s)} onChange={() => toggleScope(s)} /> {s}
+                </label>
+              ))}
+            </div>
+            <div className="field"><label>Expires in (days, optional — blank = never)</label><input value={expiresInDays} onChange={e => setExpiresInDays(e.target.value)} /></div>
+            {err && <div className="err">{err}</div>}
+            <div className="row">
+              <button className="btn" onClick={() => setShowNew(false)}>Cancel</button>
+              <button className="btn primary" onClick={create}>Create</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AIGatewayPanel({ role }) {
+  const [routes, setRoutes] = useState([]);
+  const [logs, setLogs] = useState([]);
+  const [showLogs, setShowLogs] = useState(false);
+  const [showNew, setShowNew] = useState(false);
+  const [form, setForm] = useState({ name: "", provider: "anthropic", model: "claude-sonnet-4-5", api_key_secret_name: "", requests_per_minute: 30 });
+  const [err, setErr] = useState("");
+
+  const load = async () => setRoutes(await api("/api/ai-gateway/routes"));
+  useEffect(() => { load(); }, []);
+
+  const create = async () => {
+    if (!form.name || !form.api_key_secret_name) { setErr("Name and secret name are required"); return; }
+    try {
+      await api("/api/ai-gateway/routes", { method: "POST", body: JSON.stringify(form) });
+      setShowNew(false); setForm({ name: "", provider: "anthropic", model: "claude-sonnet-4-5", api_key_secret_name: "", requests_per_minute: 30 });
+      load();
+    } catch (e) { setErr(e.message); }
+  };
+
+  const toggle = async (r) => { await api(`/api/ai-gateway/routes/${r.id}/toggle`, { method: "POST" }); load(); };
+  const remove = async (r) => { await api(`/api/ai-gateway/routes/${r.id}`, { method: "DELETE" }); load(); };
+  const viewLogs = async () => { setLogs(await api("/api/ai-gateway/logs")); setShowLogs(true); };
+
+  return (
+    <div>
+      <div className="section-label" style={{ display: "flex", justifyContent: "space-between" }}>
+        <span>AI Gateway — unified LLM routing, rate limits, and usage logs</span>
+        <span>
+          {role === "admin" && <button className="new-btn" style={{ marginRight: 6 }} onClick={viewLogs}>logs</button>}
+          {role === "admin" && <button className="new-btn" onClick={() => setShowNew(true)}>+ new route</button>}
+        </span>
+      </div>
+      <p style={{ color: "var(--muted)", fontSize: 12.5, marginTop: -4 }}>
+        A route wraps a provider + model + rate limit behind one name. API keys are
+        referenced from the Secrets tab, not stored twice. Used by the Playground tab, and
+        available for any future integration.
+      </p>
+      <table className="admin-table">
+        <thead><tr><th>Name</th><th>Provider</th><th>Model</th><th>Rate limit</th><th>Status</th><th></th></tr></thead>
+        <tbody>
+          {routes.map(r => (
+            <tr key={r.id}>
+              <td>{r.name}</td>
+              <td style={{ color: "var(--muted)" }}>{r.provider}</td>
+              <td style={{ color: "var(--muted)" }}>{r.model}</td>
+              <td style={{ color: "var(--muted)" }}>{r.requests_per_minute}/min</td>
+              <td><span className={"badge " + (r.is_enabled ? "success" : "failed")}>{r.is_enabled ? "enabled" : "disabled"}</span></td>
+              <td style={{ whiteSpace: "nowrap" }}>
+                {role === "admin" && <button className="btn" style={{ padding: "2px 8px", marginRight: 4 }} onClick={() => toggle(r)}>{r.is_enabled ? "disable" : "enable"}</button>}
+                {role === "admin" && <button className="btn danger" style={{ padding: "2px 8px" }} onClick={() => remove(r)}>delete</button>}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {routes.length === 0 && <div className="empty-state" style={{ marginTop: 10 }}>No routes configured yet</div>}
+
+      {showLogs && (
+        <div className="modal-backdrop" onClick={e => e.target === e.currentTarget && setShowLogs(false)}>
+          <div className="modal" style={{ width: 520 }}>
+            <h3>Recent calls</h3>
+            <table className="admin-table">
+              <thead><tr><th>When</th><th>User</th><th>Status</th><th>Latency</th></tr></thead>
+              <tbody>
+                {logs.map(l => (
+                  <tr key={l.id}>
+                    <td style={{ color: "var(--muted)" }}>{l.created_at.slice(0, 19).replace("T", " ")}</td>
+                    <td>{l.username || "—"}</td>
+                    <td><span className={"badge " + (l.success ? "success" : "failed")}>{l.success ? "ok" : "error"}</span></td>
+                    <td style={{ color: "var(--muted)" }}>{l.latency_ms}ms</td>
+                  </tr>
+                ))}
+                {logs.length === 0 && <tr><td colSpan="4" style={{ color: "var(--muted)" }}>No calls yet</td></tr>}
+              </tbody>
+            </table>
+            <div className="row"><button className="btn" onClick={() => setShowLogs(false)}>Close</button></div>
+          </div>
+        </div>
+      )}
+
+      {showNew && (
+        <div className="modal-backdrop" onClick={e => e.target === e.currentTarget && setShowNew(false)}>
+          <div className="modal">
+            <h3>New AI Gateway route</h3>
+            <div className="field"><label>Name</label><input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></div>
+            <div className="inline-form">
+              <select value={form.provider} onChange={e => setForm({ ...form, provider: e.target.value })}>
+                <option value="anthropic">Anthropic</option><option value="openai">OpenAI</option>
+              </select>
+              <input placeholder="model (e.g. claude-sonnet-4-5)" value={form.model} onChange={e => setForm({ ...form, model: e.target.value })} />
+            </div>
+            <div className="field"><label>API key — Secret name (from the Secrets tab)</label><input value={form.api_key_secret_name} onChange={e => setForm({ ...form, api_key_secret_name: e.target.value })} /></div>
+            <div className="field"><label>Rate limit (requests/minute)</label><input value={form.requests_per_minute} onChange={e => setForm({ ...form, requests_per_minute: parseInt(e.target.value) || 30 })} /></div>
+            {err && <div className="err">{err}</div>}
+            <div className="row">
+              <button className="btn" onClick={() => setShowNew(false)}>Cancel</button>
+              <button className="btn primary" onClick={create}>Create</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PlaygroundPanel({ role }) {
+  const [routes, setRoutes] = useState([]);
+  const [routeName, setRouteName] = useState("");
+  const [system, setSystem] = useState("You are a helpful assistant.");
+  const [messages, setMessages] = useState([]);
+  const [input, setInput] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+
+  useEffect(() => { api("/api/ai-gateway/routes").then(rs => { setRoutes(rs); if (rs.length) setRouteName(rs[0].name); }); }, []);
+
+  const send = async () => {
+    if (!input.trim() || !routeName) return;
+    const newMessages = [...messages, { role: "user", content: input }];
+    setMessages(newMessages); setInput(""); setBusy(true); setErr("");
+    try {
+      const res = await api("/api/ai-gateway/chat", { method: "POST", body: JSON.stringify({ route_name: routeName, messages: newMessages, system }) });
+      setMessages([...newMessages, { role: "assistant", content: res.content }]);
+    } catch (e) { setErr(e.message); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <div>
+      <div className="section-label">Playground — test prompts against a configured route</div>
+      {routes.length === 0 && (
+        <div className="empty-state" style={{ marginTop: 10 }}>No AI Gateway routes configured yet — add one in the AI Gateway tab first.</div>
+      )}
+      {routes.length > 0 && (
+        <React.Fragment>
+          <div className="inline-form">
+            <select value={routeName} onChange={e => setRouteName(e.target.value)}>
+              {routes.map(r => <option key={r.name} value={r.name}>{r.name} ({r.model})</option>)}
+            </select>
+            <input style={{ flex: 1 }} placeholder="system prompt" value={system} onChange={e => setSystem(e.target.value)} />
+          </div>
+          <div className="dag-panel" style={{ minHeight: 200, marginBottom: 12 }}>
+            {messages.map((m, i) => (
+              <div key={i} style={{ marginBottom: 10 }}>
+                <div style={{ fontFamily: "IBM Plex Mono", fontSize: 11, color: m.role === "user" ? "var(--blue)" : "var(--green)", marginBottom: 2 }}>{m.role}</div>
+                <div style={{ fontSize: 13, whiteSpace: "pre-wrap" }}>{m.content}</div>
+              </div>
+            ))}
+            {messages.length === 0 && <div className="empty-state">Send a message to start</div>}
+          </div>
+          {err && <div className="err">{err}</div>}
+          <div className="inline-form">
+            <input style={{ flex: 1 }} placeholder="Type a message..." value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => e.key === "Enter" && send()} disabled={role === "viewer"} />
+            <button className="btn primary" onClick={send} disabled={busy || role === "viewer"}>{busy ? "..." : "Send"}</button>
+          </div>
+        </React.Fragment>
+      )}
+    </div>
+  );
+}
+
+function PipelinesPanel({ role }) {
+  const [pipelines, setPipelines] = useState([]);
+  const [selected, setSelected] = useState(null);
+  const [showNew, setShowNew] = useState(false);
+  const [newName, setNewName] = useState("");
+  const [tables, setTables] = useState([{ table_name: "", sql: "" }]);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+
+  const load = async () => setPipelines(await api("/api/pipelines"));
+  useEffect(() => { load(); }, []);
+
+  const create = async () => {
+    if (!newName || tables.some(t => !t.table_name || !t.sql)) { setErr("Name the pipeline and fill in every declared table"); return; }
+    try {
+      await api("/api/pipelines", { method: "POST", body: JSON.stringify({ name: newName, tables }) });
+      setShowNew(false); setNewName(""); setTables([{ table_name: "", sql: "" }]);
+      load();
+    } catch (e) { setErr(e.message); }
+  };
+
+  const run = async (p) => {
+    setBusy(true);
+    try { setSelected(await api(`/api/pipelines/${p.id}/run`, { method: "POST" })); load(); }
+    finally { setBusy(false); }
+  };
+
+  const togglePause = async (p) => { await api(`/api/pipelines/${p.id}/pause`, { method: "POST" }); load(); };
+  const remove = async (p) => { await api(`/api/pipelines/${p.id}`, { method: "DELETE" }); setSelected(null); load(); };
+
+  if (!selected) {
+    return (
+      <div>
+        <div className="section-label" style={{ display: "flex", justifyContent: "space-between" }}>
+          <span>Pipelines — declare tables, dependencies are inferred automatically</span>
+          {role !== "viewer" && <button className="new-btn" onClick={() => setShowNew(true)}>+ new</button>}
+        </div>
+        <p style={{ color: "var(--muted)", fontSize: 12.5, marginTop: -4 }}>
+          Unlike Workflows (where you wire up task dependencies by hand), a Pipeline is a
+          set of declared tables — each just a name and a SELECT statement. Reference
+          another declared table by name in your SQL and the execution order is inferred
+          automatically. Full recompute each run, not incremental/streaming.
+        </p>
+        <table className="admin-table">
+          <thead><tr><th>Name</th><th>Tables</th><th>Status</th><th></th></tr></thead>
+          <tbody>
+            {pipelines.map(p => (
+              <tr key={p.id}>
+                <td style={{ cursor: "pointer", color: "var(--blue)" }} onClick={() => setSelected(p)}>{p.name}{p.is_paused ? " (paused)" : ""}</td>
+                <td style={{ color: "var(--muted)" }}>{p.tables.length}</td>
+                <td><span className={"badge " + (p.last_run_status === "ok" ? "success" : p.last_run_status === "error" ? "failed" : "pending")}>{p.last_run_status}</span></td>
+                <td style={{ whiteSpace: "nowrap" }}>
+                  {role !== "viewer" && <button className="btn" style={{ padding: "2px 8px", marginRight: 4 }} onClick={() => run(p)} disabled={busy}>run</button>}
+                  {role !== "viewer" && <button className="btn" style={{ padding: "2px 8px", marginRight: 4 }} onClick={() => togglePause(p)}>{p.is_paused ? "resume" : "pause"}</button>}
+                  {role === "admin" && <button className="btn danger" style={{ padding: "2px 8px" }} onClick={() => remove(p)}>delete</button>}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {pipelines.length === 0 && <div className="empty-state" style={{ marginTop: 10 }}>No pipelines yet</div>}
+
+        {showNew && (
+          <div className="modal-backdrop" onClick={e => e.target === e.currentTarget && setShowNew(false)}>
+            <div className="modal">
+              <h3>New pipeline</h3>
+              <div className="field"><label>Name</label><input value={newName} onChange={e => setNewName(e.target.value)} /></div>
+              <div className="section-label" style={{ marginTop: 0 }}>Declared tables</div>
+              {tables.map((t, i) => (
+                <div key={i} style={{ marginBottom: 10 }}>
+                  <input placeholder="table name" value={t.table_name} style={{ marginBottom: 4, width: "100%" }}
+                         onChange={e => setTables(tables.map((x, xi) => xi === i ? { ...x, table_name: e.target.value } : x))} />
+                  <textarea placeholder="SELECT ... FROM some_other_declared_table WHERE ..." value={t.sql} style={{ height: 70 }}
+                            onChange={e => setTables(tables.map((x, xi) => xi === i ? { ...x, sql: e.target.value } : x))} />
+                </div>
+              ))}
+              <button className="btn" onClick={() => setTables([...tables, { table_name: "", sql: "" }])}>+ add declared table</button>
+              {err && <div className="err">{err}</div>}
+              <div className="row">
+                <button className="btn" onClick={() => setShowNew(false)}>Cancel</button>
+                <button className="btn primary" onClick={create}>Create</button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div className="breadcrumb">
+        <a onClick={() => setSelected(null)}>Pipelines</a>
+        <span className="sep">/</span>
+        <span className="current">{selected.name}</span>
+      </div>
+      <div className="section-label">Declared tables — in inferred execution order</div>
+      {selected.tables.map(t => (
+        <div key={t.id} className={"task-row " + (t.last_status === "ok" ? "success" : t.last_status === "error" ? "failed" : "pending")}>
+          <span className={"badge " + (t.last_status === "ok" ? "success" : t.last_status === "error" ? "failed" : "pending")}>{t.last_status}</span>
+          <span>{t.table_name}</span>
+          <span style={{ color: "var(--muted)" }}>{t.row_count != null ? `${t.row_count} rows` : ""}</span>
+        </div>
+      ))}
+      {selected.tables.some(t => t.last_error) && (
+        <pre className="logs">{selected.tables.filter(t => t.last_error).map(t => `${t.table_name}: ${t.last_error}`).join("\n\n")}</pre>
+      )}
+    </div>
+  );
+}
+
+function SharingPanel({ role }) {
+  const [shares, setShares] = useState([]);
+  const [selected, setSelected] = useState(null);
+  const [tables, setTables] = useState([]);
+  const [recipients, setRecipients] = useState([]);
+  const [showNew, setShowNew] = useState(false);
+  const [newName, setNewName] = useState("");
+  const [addTableName, setAddTableName] = useState("");
+  const [newRecipientName, setNewRecipientName] = useState("");
+  const [profileModal, setProfileModal] = useState(null);
+  const [err, setErr] = useState("");
+
+  const load = async () => setShares(await api("/api/sharing/shares"));
+  useEffect(() => { load(); }, []);
+
+  const open = async (s) => {
+    setSelected(s);
+    setTables(await api(`/api/sharing/shares/${s.id}/tables`));
+    setRecipients(await api(`/api/sharing/shares/${s.id}/recipients`));
+  };
+
+  const createShare = async () => {
+    if (!newName) return;
+    try {
+      await api("/api/sharing/shares", { method: "POST", body: JSON.stringify({ name: newName }) });
+      setShowNew(false); setNewName(""); load();
+    } catch (e) { setErr(e.message); }
+  };
+
+  const addTable = async () => {
+    if (!addTableName) return;
+    try {
+      await api(`/api/sharing/shares/${selected.id}/tables`, { method: "POST", body: JSON.stringify({ table_name: addTableName }) });
+      setAddTableName(""); open(selected);
+    } catch (e) { setErr(e.message); }
+  };
+
+  const removeTable = async (id) => { await api(`/api/sharing/shares/tables/${id}`, { method: "DELETE" }); open(selected); };
+
+  const addRecipient = async () => {
+    if (!newRecipientName) return;
+    const r = await api(`/api/sharing/shares/${selected.id}/recipients`, { method: "POST", body: JSON.stringify({ name: newRecipientName }) });
+    setNewRecipientName(""); open(selected);
+    const profile = { shareCredentialsVersion: 1, endpoint: `${API_BASE}/delta-sharing`, bearerToken: r.bearer_token };
+    setProfileModal({ name: r.name, profile });
+  };
+
+  const showProfile = async (r) => {
+    const profile = await api(`/api/sharing/shares/${selected.id}/recipients/${r.id}/profile`, { method: "GET" });
+    setProfileModal({ name: r.name, profile });
+  };
+
+  const removeRecipient = async (id) => { await api(`/api/sharing/shares/recipients/${id}`, { method: "DELETE" }); open(selected); };
+
+  if (!selected) {
+    return (
+      <div>
+        <div className="section-label" style={{ display: "flex", justifyContent: "space-between" }}>
+          <span>Sharing — real Delta Sharing protocol, readable by any standard client</span>
+          {role !== "viewer" && <button className="new-btn" onClick={() => setShowNew(true)}>+ new share</button>}
+        </div>
+        <p style={{ color: "var(--muted)", fontSize: 12.5, marginTop: -4 }}>
+          Implements the real, open Delta Sharing REST protocol — recipients can read
+          shared tables with the standard <code>delta-sharing</code> Python/Spark library
+          or Power BI's Delta Sharing connector, not just AtlasFlow itself.
+        </p>
+        <table className="admin-table">
+          <thead><tr><th>Name</th><th>Tables</th><th>Recipients</th></tr></thead>
+          <tbody>
+            {shares.map(s => (
+              <tr key={s.id} style={{ cursor: "pointer" }} onClick={() => open(s)}>
+                <td style={{ color: "var(--blue)" }}>{s.name}</td>
+                <td style={{ color: "var(--muted)" }}>{s.table_count}</td>
+                <td style={{ color: "var(--muted)" }}>{s.recipient_count}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {shares.length === 0 && <div className="empty-state" style={{ marginTop: 10 }}>No shares yet</div>}
+
+        {showNew && (
+          <div className="modal-backdrop" onClick={e => e.target === e.currentTarget && setShowNew(false)}>
+            <div className="modal" style={{ width: 340 }}>
+              <h3>New share</h3>
+              <input value={newName} onChange={e => setNewName(e.target.value)} autoFocus />
+              {err && <div className="err">{err}</div>}
+              <div className="row">
+                <button className="btn" onClick={() => setShowNew(false)}>Cancel</button>
+                <button className="btn primary" onClick={createShare}>Create</button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div className="breadcrumb">
+        <a onClick={() => setSelected(null)}>Sharing</a>
+        <span className="sep">/</span>
+        <span className="current">{selected.name}</span>
+      </div>
+
+      <div className="section-label">Tables in this share</div>
+      {role !== "viewer" && (
+        <div className="inline-form">
+          <input placeholder="catalog table name" value={addTableName} onChange={e => setAddTableName(e.target.value)} />
+          <button className="btn primary" onClick={addTable}>Add table</button>
+        </div>
+      )}
+      {err && <div className="err">{err}</div>}
+      <table className="admin-table">
+        <thead><tr><th>Shared as</th><th></th></tr></thead>
+        <tbody>
+          {tables.map(t => (
+            <tr key={t.id}><td>{t.shared_name}</td><td>{role !== "viewer" && <button className="btn danger" style={{ padding: "2px 8px" }} onClick={() => removeTable(t.id)}>remove</button>}</td></tr>
+          ))}
+        </tbody>
+      </table>
+      {tables.length === 0 && <div className="empty-state" style={{ marginTop: 10 }}>No tables added yet</div>}
+
+      <div className="section-label" style={{ marginTop: 20 }}>Recipients</div>
+      {role !== "viewer" && (
+        <div className="inline-form">
+          <input placeholder="recipient name" value={newRecipientName} onChange={e => setNewRecipientName(e.target.value)} />
+          <button className="btn primary" onClick={addRecipient}>Add recipient</button>
+        </div>
+      )}
+      <table className="admin-table">
+        <thead><tr><th>Name</th><th></th></tr></thead>
+        <tbody>
+          {recipients.map(r => (
+            <tr key={r.id}>
+              <td>{r.name}</td>
+              <td style={{ whiteSpace: "nowrap" }}>
+                <button className="btn" style={{ padding: "2px 8px", marginRight: 4 }} onClick={() => showProfile(r)}>get profile</button>
+                {role !== "viewer" && <button className="btn danger" style={{ padding: "2px 8px" }} onClick={() => removeRecipient(r.id)}>remove</button>}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {recipients.length === 0 && <div className="empty-state" style={{ marginTop: 10 }}>No recipients yet</div>}
+
+      {profileModal && (
+        <div className="modal-backdrop" onClick={e => e.target === e.currentTarget && setProfileModal(null)}>
+          <div className="modal" style={{ width: 480 }}>
+            <h3>Profile for "{profileModal.name}"</h3>
+            <p style={{ color: "var(--muted)", fontSize: 12.5, marginTop: -6 }}>
+              Save this as a <code>.share</code> file and hand it to the recipient. They use it with:
+            </p>
+            <pre className="logs">{`import delta_sharing\nclient = delta_sharing.SharingClient("config.share")\ndf = delta_sharing.load_as_pandas("config.share#${selected.name}.default.TABLE_NAME")`}</pre>
+            <p style={{ color: "var(--muted)", fontSize: 12.5 }}>Profile file contents (regenerating invalidates the previous token):</p>
+            <pre className="logs">{JSON.stringify(profileModal.profile, null, 2)}</pre>
+            <div className="row"><button className="btn" onClick={() => setProfileModal(null)}>Close</button></div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function LakebasePanel({ role }) {
+  const [tables, setTables] = useState([]);
+  const [selected, setSelected] = useState(null);
+  const [rows, setRows] = useState([]);
+  const [showNew, setShowNew] = useState(false);
+  const [newName, setNewName] = useState("");
+  const [columns, setColumns] = useState([{ name: "", type: "text" }]);
+  const [newRow, setNewRow] = useState({});
+  const [err, setErr] = useState("");
+
+  const load = async () => setTables(await api("/api/lakebase/tables"));
+  useEffect(() => { load(); }, []);
+
+  const openTable = async (t) => {
+    setSelected(t); setNewRow({});
+    setRows(await api(`/api/lakebase/tables/${t.id}/rows`));
+  };
+
+  const createTable = async () => {
+    if (!newName || columns.some(c => !c.name)) { setErr("Name the table and every column"); return; }
+    try {
+      await api("/api/lakebase/tables", { method: "POST", body: JSON.stringify({ name: newName, columns, description: "" }) });
+      setShowNew(false); setNewName(""); setColumns([{ name: "", type: "text" }]);
+      load();
+    } catch (e) { setErr(e.message); }
+  };
+
+  const insertRow = async () => {
+    try {
+      await api(`/api/lakebase/tables/${selected.id}/rows`, { method: "POST", body: JSON.stringify({ values: newRow }) });
+      setNewRow({});
+      openTable(selected);
+    } catch (e) { setErr(e.message); }
+  };
+
+  const deleteRow = async (id) => { await api(`/api/lakebase/tables/${selected.id}/rows/${id}`, { method: "DELETE" }); openTable(selected); };
+  const deleteTable = async (t) => { await api(`/api/lakebase/tables/${t.id}`, { method: "DELETE" }); setSelected(null); load(); };
+  const sync = async (t) => { await api(`/api/lakebase/tables/${t.id}/sync`, { method: "POST" }); load(); };
+
+  if (!selected) {
+    return (
+      <div>
+        <div className="section-label" style={{ display: "flex", justifyContent: "space-between" }}>
+          <span>Lakebase — real transactional (OLTP) tables</span>
+          {role !== "viewer" && <button className="new-btn" onClick={() => setShowNew(true)}>+ new</button>}
+        </div>
+        <p style={{ color: "var(--muted)", fontSize: 12.5, marginTop: -4 }}>
+          Real Postgres-backed tables with row-level insert/update/delete — different from
+          the Data tab's Delta tables (batch/analytical, not row-editable). "Sync to Delta"
+          does a periodic full-refresh read into an analytics-ready table; it's not
+          real-time change-data-capture streaming.
+        </p>
+        <table className="admin-table">
+          <thead><tr><th>Name</th><th>Rows</th><th>Synced to</th><th></th></tr></thead>
+          <tbody>
+            {tables.map(t => (
+              <tr key={t.id}>
+                <td style={{ cursor: "pointer", color: "var(--blue)" }} onClick={() => openTable(t)}>{t.name}</td>
+                <td style={{ color: "var(--muted)" }}>{t.row_count}</td>
+                <td style={{ color: "var(--muted)" }}>{t.synced_table_name || "—"}</td>
+                <td>
+                  {role !== "viewer" && <button className="btn" style={{ padding: "2px 8px", marginRight: 4 }} onClick={() => sync(t)}>sync to Delta</button>}
+                  {role === "admin" && <button className="btn danger" style={{ padding: "2px 8px" }} onClick={() => deleteTable(t)}>delete</button>}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {tables.length === 0 && <div className="empty-state" style={{ marginTop: 10 }}>No Lakebase tables yet</div>}
+
+        {showNew && (
+          <div className="modal-backdrop" onClick={e => e.target === e.currentTarget && setShowNew(false)}>
+            <div className="modal">
+              <h3>New Lakebase table</h3>
+              <div className="field"><label>Name</label><input value={newName} onChange={e => setNewName(e.target.value)} /></div>
+              <div className="section-label" style={{ marginTop: 0 }}>Columns (an "id" primary key is added automatically)</div>
+              {columns.map((c, i) => (
+                <div key={i} className="inline-form" style={{ marginBottom: 6 }}>
+                  <input placeholder="column name" value={c.name} onChange={e => setColumns(columns.map((x, xi) => xi === i ? { ...x, name: e.target.value } : x))} />
+                  <select value={c.type} onChange={e => setColumns(columns.map((x, xi) => xi === i ? { ...x, type: e.target.value } : x))}>
+                    <option value="text">text</option><option value="integer">integer</option><option value="bigint">bigint</option>
+                    <option value="boolean">boolean</option><option value="double precision">double</option>
+                    <option value="timestamp">timestamp</option><option value="date">date</option><option value="numeric">numeric</option>
+                  </select>
+                </div>
+              ))}
+              <button className="btn" onClick={() => setColumns([...columns, { name: "", type: "text" }])}>+ add column</button>
+              {err && <div className="err">{err}</div>}
+              <div className="row">
+                <button className="btn" onClick={() => setShowNew(false)}>Cancel</button>
+                <button className="btn primary" onClick={createTable}>Create</button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div className="breadcrumb">
+        <a onClick={() => setSelected(null)}>Lakebase</a>
+        <span className="sep">/</span>
+        <span className="current">{selected.name}</span>
+      </div>
+      {role !== "viewer" && (
+        <div className="inline-form">
+          {selected.columns.map(c => (
+            <input key={c.name} placeholder={`${c.name} (${c.type})`} value={newRow[c.name] || ""}
+                   onChange={e => setNewRow({ ...newRow, [c.name]: e.target.value })} />
+          ))}
+          <button className="btn primary" onClick={insertRow}>Insert row</button>
+        </div>
+      )}
+      {err && <div className="err">{err}</div>}
+      <table className="admin-table">
+        <thead><tr><th>id</th>{selected.columns.map(c => <th key={c.name}>{c.name}</th>)}<th></th></tr></thead>
+        <tbody>
+          {rows.map(r => (
+            <tr key={r.id}>
+              <td>{r.id}</td>
+              {selected.columns.map(c => <td key={c.name}>{String(r[c.name] ?? "")}</td>)}
+              <td>{role !== "viewer" && <button className="btn danger" style={{ padding: "2px 8px" }} onClick={() => deleteRow(r.id)}>delete</button>}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {rows.length === 0 && <div className="empty-state" style={{ marginTop: 10 }}>No rows yet</div>}
+    </div>
+  );
+}
+
+function IngestionPanel({ role }) {
+  const [sources, setSources] = useState([]);
+  const [step, setStep] = useState(1);  // 1: pick type, 2: connect, 3: preview + name
+  const [sourceType, setSourceType] = useState("postgres");
+  const [form, setForm] = useState({ name: "", host: "", port: "5432", database: "", username: "", password: "", url: "", method: "GET", auth_token: "", response_path: "" });
+  const [query, setQuery] = useState("");
+  const [savedSourceId, setSavedSourceId] = useState(null);
+  const [preview, setPreview] = useState(null);
+  const [tableName, setTableName] = useState("");
+  const [visibility, setVisibility] = useState("public");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const [result, setResult] = useState(null);
+
+  const loadSources = async () => setSources(await api("/api/ingestion/sources"));
+  useEffect(() => { loadSources(); }, []);
+
+  const reset = () => {
+    setStep(1); setForm({ name: "", host: "", port: "5432", database: "", username: "", password: "", url: "", method: "GET", auth_token: "", response_path: "" });
+    setQuery(""); setSavedSourceId(null); setPreview(null); setTableName(""); setResult(null); setErr("");
+  };
+
+  const saveSource = async () => {
+    setErr("");
+    try {
+      const payload = { name: form.name, source_type: sourceType, ...form };
+      const s = await api("/api/ingestion/sources", { method: "POST", body: JSON.stringify(payload) });
+      setSavedSourceId(s.id);
+      setStep(3);
+    } catch (e) { setErr(e.message); }
+  };
+
+  const runPreview = async () => {
+    setBusy(true); setErr(""); setPreview(null);
+    try { setPreview(await api(`/api/ingestion/sources/${savedSourceId}/preview`, { method: "POST", body: JSON.stringify({ query }) })); }
+    catch (e) { setErr(e.message); }
+    finally { setBusy(false); }
+  };
+
+  const runIngest = async () => {
+    if (!tableName) { setErr("Name the table first"); return; }
+    setBusy(true); setErr("");
+    try {
+      const table = await api(`/api/ingestion/sources/${savedSourceId}/ingest`, { method: "POST", body: JSON.stringify({ query, table_name: tableName, visibility }) });
+      setResult(table);
+      loadSources();
+    } catch (e) { setErr(e.message); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <div>
+      <div className="section-label" style={{ display: "flex", justifyContent: "space-between" }}>
+        <span>Data Ingestion — connect a database or API, land it as a table</span>
+        <button className="new-btn" onClick={reset}>+ new ingestion</button>
+      </div>
+      <p style={{ color: "var(--muted)", fontSize: 12.5, marginTop: -4 }}>
+        Postgres/MySQL reads run distributed via real Spark JDBC; REST API pulls fetch
+        directly and land as a Delta table the same way file uploads do.
+      </p>
+
+      <table className="admin-table">
+        <thead><tr><th>Saved source</th><th>Type</th></tr></thead>
+        <tbody>
+          {sources.map(s => (
+            <tr key={s.id}><td>{s.name}</td><td style={{ color: "var(--muted)" }}>{s.source_type}</td></tr>
+          ))}
+        </tbody>
+      </table>
+      {sources.length === 0 && <div className="empty-state" style={{ marginTop: 10 }}>No sources connected yet</div>}
+
+      {step > 0 && role !== "viewer" && (
+        <div className="dag-panel" style={{ marginTop: 18 }}>
+          {step === 1 && (
+            <React.Fragment>
+              <div className="section-label" style={{ marginTop: 0 }}>1. Pick a source</div>
+              <div className="inline-form">
+                <select value={sourceType} onChange={e => setSourceType(e.target.value)}>
+                  <option value="postgres">PostgreSQL</option>
+                  <option value="mysql">MySQL</option>
+                  <option value="rest_api">REST API</option>
+                </select>
+                <button className="btn primary" onClick={() => setStep(2)}>Next</button>
+              </div>
+            </React.Fragment>
+          )}
+
+          {step === 2 && (
+            <React.Fragment>
+              <div className="section-label" style={{ marginTop: 0 }}>2. Connect</div>
+              <div className="field"><label>Connection name</label><input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></div>
+              {(sourceType === "postgres" || sourceType === "mysql") && (
+                <React.Fragment>
+                  <div className="inline-form">
+                    <input placeholder="host" value={form.host} onChange={e => setForm({ ...form, host: e.target.value })} />
+                    <input placeholder="port" value={form.port} onChange={e => setForm({ ...form, port: e.target.value })} style={{ width: 80 }} />
+                    <input placeholder="database" value={form.database} onChange={e => setForm({ ...form, database: e.target.value })} />
+                  </div>
+                  <div className="inline-form">
+                    <input placeholder="username" value={form.username} onChange={e => setForm({ ...form, username: e.target.value })} />
+                    <input placeholder="password" type="password" value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} />
+                  </div>
+                </React.Fragment>
+              )}
+              {sourceType === "rest_api" && (
+                <React.Fragment>
+                  <div className="field"><label>URL</label><input value={form.url} onChange={e => setForm({ ...form, url: e.target.value })} placeholder="https://api.example.com/orders" /></div>
+                  <div className="inline-form">
+                    <input placeholder="auth token (optional, sent as Bearer)" value={form.auth_token} onChange={e => setForm({ ...form, auth_token: e.target.value })} />
+                    <input placeholder="response path (e.g. data.records)" value={form.response_path} onChange={e => setForm({ ...form, response_path: e.target.value })} />
+                  </div>
+                </React.Fragment>
+              )}
+              {err && <div className="err">{err}</div>}
+              <div className="row">
+                <button className="btn" onClick={() => setStep(1)}>Back</button>
+                <button className="btn primary" onClick={saveSource}>Save & continue</button>
+              </div>
+            </React.Fragment>
+          )}
+
+          {step === 3 && (
+            <React.Fragment>
+              <div className="section-label" style={{ marginTop: 0 }}>3. Preview & land as a table</div>
+              {(sourceType === "postgres" || sourceType === "mysql") && (
+                <div className="field">
+                  <label>Table name or subquery</label>
+                  <input value={query} onChange={e => setQuery(e.target.value)} placeholder="orders, or (SELECT * FROM orders WHERE ...) t" />
+                </div>
+              )}
+              <button className="btn" onClick={runPreview} disabled={busy}>{busy ? "Loading..." : "Preview"}</button>
+              {preview && (
+                <div style={{ marginTop: 12, overflowX: "auto" }}>
+                  <table className="admin-table">
+                    <thead><tr>{preview.columns.map(c => <th key={c}>{c}</th>)}</tr></thead>
+                    <tbody>
+                      {preview.rows.slice(0, 10).map((row, i) => (
+                        <tr key={i}>{preview.columns.map(c => <td key={c}>{String(row[c])}</td>)}</tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+              <div className="inline-form" style={{ marginTop: 14 }}>
+                <input placeholder="table name" value={tableName} onChange={e => setTableName(e.target.value)} />
+                <select value={visibility} onChange={e => setVisibility(e.target.value)}>
+                  <option value="public">Public</option>
+                  <option value="restricted">Restricted</option>
+                </select>
+                <button className="btn primary" onClick={runIngest} disabled={busy}>{busy ? "Ingesting..." : "Ingest"}</button>
+              </div>
+              {err && <div className="err">{err}</div>}
+              {result && <div style={{ color: "var(--green)", fontSize: 12.5, marginTop: 10, fontFamily: "IBM Plex Mono" }}>Created table "{result.name}" ({result.row_count} rows) — find it in the Data tab.</div>}
+            </React.Fragment>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function NotebooksPanel({ role }) {
+  const [notebooks, setNotebooks] = useState([]);
+  const [scheduling, setScheduling] = useState(null);
+  const [params, setParams] = useState([{ key: "", value: "" }]);
+  const [cron, setCron] = useState("");
+  const [err, setErr] = useState("");
+  const [created, setCreated] = useState(null);
+
+  const load = async () => setNotebooks(await api("/api/notebooks"));
+  useEffect(() => { load(); }, []);
+
+  const submit = async () => {
+    setErr(""); setCreated(null);
+    const paramObj = {};
+    params.forEach(p => { if (p.key) paramObj[p.key] = p.value; });
+    try {
+      const wf = await api("/api/notebooks/quick-schedule", {
+        method: "POST",
+        body: JSON.stringify({ notebook_path: scheduling.path, params: paramObj, schedule_cron: cron || null }),
+      });
+      setCreated(wf);
+      setScheduling(null); setParams([{ key: "", value: "" }]); setCron("");
+    } catch (e) { setErr(e.message); }
+  };
+
+  return (
+    <div>
+      <div className="section-label">Notebooks — run parameters + quick scheduling</div>
+      <p style={{ color: "var(--muted)", fontSize: 12.5, marginTop: -4 }}>
+        Lists <code>.ipynb</code> files from the shared notebooks folder. Edit them at{" "}
+        <a href="http://localhost:8888" target="_blank" rel="noopener noreferrer" style={{ color: "var(--blue)" }}>localhost:8888</a>{" "}
+        (Jupyter Lab); use "Quick schedule" here to set parameters and turn one into a
+        scheduled (or one-off) workflow without hand-building a DAG for it. This isn't the
+        same as Databricks' live in-notebook widgets — parameters are set here, before the
+        notebook runs, not edited reactively inside it.
+      </p>
+      {created && (
+        <div style={{ color: "var(--green)", fontSize: 12.5, fontFamily: "IBM Plex Mono", marginBottom: 10 }}>
+          Created workflow "{created.name}" — find it in the Workflows tab to trigger or view runs.
+        </div>
+      )}
+      <table className="admin-table">
+        <thead><tr><th>Name</th><th>Path</th><th></th></tr></thead>
+        <tbody>
+          {notebooks.map(n => (
+            <tr key={n.path}>
+              <td>{n.name}</td>
+              <td style={{ color: "var(--muted)" }}>{n.path}</td>
+              <td>{role !== "viewer" && <button className="btn" style={{ padding: "2px 8px" }} onClick={() => setScheduling(n)}>Quick schedule</button>}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {notebooks.length === 0 && <div className="empty-state" style={{ marginTop: 10 }}>No notebooks found in ./notebooks</div>}
+
+      {scheduling && (
+        <div className="modal-backdrop" onClick={e => e.target === e.currentTarget && setScheduling(null)}>
+          <div className="modal">
+            <h3>Quick schedule — {scheduling.name}</h3>
+            <div className="section-label" style={{ marginTop: 0 }}>Parameters (papermill)</div>
+            {params.map((p, i) => (
+              <div key={i} className="inline-form" style={{ marginBottom: 6 }}>
+                <input placeholder="key" value={p.key} onChange={e => setParams(params.map((x, xi) => xi === i ? { ...x, key: e.target.value } : x))} />
+                <input placeholder="value" value={p.value} onChange={e => setParams(params.map((x, xi) => xi === i ? { ...x, value: e.target.value } : x))} />
+              </div>
+            ))}
+            <button className="btn" onClick={() => setParams([...params, { key: "", value: "" }])}>+ add parameter</button>
+            <div className="field" style={{ marginTop: 12 }}>
+              <label>Schedule (cron, optional — leave blank to run manually via the Workflows tab)</label>
+              <input value={cron} onChange={e => setCron(e.target.value)} placeholder="0 6 * * *" />
+            </div>
+            {err && <div className="err">{err}</div>}
+            <div className="row">
+              <button className="btn" onClick={() => setScheduling(null)}>Cancel</button>
+              <button className="btn primary" onClick={submit}>Create workflow</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function RunComments({ runId }) {
+  const [comments, setComments] = useState([]);
+  const [text, setText] = useState("");
+
+  const load = async () => setComments(await api(`/api/runs/${runId}/comments`));
+  useEffect(() => { load(); }, [runId]);
+
+  const post = async () => {
+    if (!text.trim()) return;
+    await api(`/api/runs/${runId}/comments`, { method: "POST", body: JSON.stringify({ text }) });
+    setText(""); load();
+  };
+
+  return (
+    <div style={{ marginTop: 18 }}>
+      <div className="section-label">Comments</div>
+      {comments.map(c => (
+        <div key={c.id} style={{ marginBottom: 8, fontSize: 12.5 }}>
+          <span style={{ fontFamily: "IBM Plex Mono", color: "var(--blue)" }}>{c.username || "unknown"}</span>
+          <span style={{ color: "var(--muted)", fontFamily: "IBM Plex Mono", fontSize: 11, marginLeft: 8 }}>{c.created_at.slice(0, 19).replace("T", " ")}</span>
+          <div>{c.text}</div>
+        </div>
+      ))}
+      {comments.length === 0 && <div className="empty-state" style={{ marginTop: 4 }}>No comments yet</div>}
+      <div className="inline-form" style={{ marginTop: 8 }}>
+        <input style={{ flex: 1 }} placeholder="Add a comment..." value={text} onChange={e => setText(e.target.value)} onKeyDown={e => e.key === "Enter" && post()} />
+        <button className="btn primary" onClick={post}>Post</button>
+      </div>
+    </div>
+  );
+}
+
+function GeniePanel({ role }) {
+  const [enabled, setEnabled] = useState(null);
+  const [question, setQuestion] = useState("");
+  const [result, setResult] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [history, setHistory] = useState([]);
+  const [showHistory, setShowHistory] = useState(false);
+
+  useEffect(() => { api("/api/genie/config").then(r => setEnabled(r.enabled)).catch(() => setEnabled(false)); }, []);
+
+  const ask = async (q) => {
+    const question_ = q || question;
+    if (!question_) return;
+    setBusy(true); setResult(null);
+    try { setResult(await api("/api/genie/ask", { method: "POST", body: JSON.stringify({ question: question_ }) })); }
+    catch (e) { setResult({ success: false, error: e.message }); }
+    finally { setBusy(false); }
+  };
+
+  const loadHistory = async () => { setHistory(await api("/api/genie/history")); setShowHistory(true); };
+
+  const suggestions = [
+    "Which tables have the most rows?",
+    "Show me a summary of what's in the catalog",
+    "Count rows by table",
+  ];
+
+  if (enabled === false) {
+    return (
+      <div>
+        <div className="section-label">Genie — ask questions about your data in plain English</div>
+        <p style={{ color: "var(--muted)", fontSize: 12.5 }}>
+          Not configured. Set <code>ATLASFLOW_ANTHROPIC_API_KEY</code> in your <code>.env</code>
+          (get one at <code>console.anthropic.com</code>) and restart to enable this tab.
+          This is a real LLM integration — it only sees table/column names, not your actual
+          data, and generated SQL should always be reviewed before trusting the result.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div className="section-label" style={{ display: "flex", justifyContent: "space-between" }}>
+        <span>Genie — ask questions about your data in plain English</span>
+        <button className="new-btn" onClick={loadHistory}>history</button>
+      </div>
+      <div className="inline-form" style={{ marginBottom: 8 }}>
+        <input style={{ flex: 1, minWidth: 320 }} placeholder="Ask your question about the catalog..."
+               value={question} onChange={e => setQuestion(e.target.value)}
+               onKeyDown={e => e.key === "Enter" && ask()} />
+        <button className="btn primary" onClick={() => ask()} disabled={busy || role === "viewer"}>{busy ? "Thinking..." : "Ask"}</button>
+      </div>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 18 }}>
+        {suggestions.map(s => (
+          <button key={s} className="btn" style={{ fontSize: 11.5 }} onClick={() => { setQuestion(s); ask(s); }}>✨ {s}</button>
+        ))}
+      </div>
+
+      {result && (
+        <div>
+          {result.sql && (
+            <React.Fragment>
+              <div className="section-label">Generated SQL</div>
+              <pre className="logs">{result.sql}</pre>
+            </React.Fragment>
+          )}
+          {!result.success && <div className="err">{result.error}</div>}
+          {result.success && (
+            <React.Fragment>
+              <div style={{ color: "var(--muted)", fontSize: 11.5, fontFamily: "IBM Plex Mono", margin: "10px 0 6px" }}>{result.row_count} row(s)</div>
+              <table className="admin-table">
+                <thead><tr>{result.columns.map(c => <th key={c}>{c}</th>)}</tr></thead>
+                <tbody>
+                  {result.rows.slice(0, 50).map((row, i) => (
+                    <tr key={i}>{result.columns.map(c => <td key={c}>{String(row[c])}</td>)}</tr>
+                  ))}
+                </tbody>
+              </table>
+              <SimpleBarChart columns={result.columns} rows={result.rows} />
+            </React.Fragment>
+          )}
+        </div>
+      )}
+
+      {showHistory && (
+        <div className="modal-backdrop" onClick={e => e.target === e.currentTarget && setShowHistory(false)}>
+          <div className="modal" style={{ width: 520 }}>
+            <h3>Genie history</h3>
+            <table className="admin-table">
+              <thead><tr><th>Question</th><th>Status</th><th>When</th></tr></thead>
+              <tbody>
+                {history.map(h => (
+                  <tr key={h.id} style={{ cursor: "pointer" }} onClick={() => { setQuestion(h.question); setShowHistory(false); }}>
+                    <td>{h.question}</td>
+                    <td><span className={"badge " + (h.success ? "success" : "failed")}>{h.success ? "ok" : "error"}</span></td>
+                    <td style={{ color: "var(--muted)" }}>{h.created_at.slice(0, 19).replace("T", " ")}</td>
+                  </tr>
+                ))}
+                {history.length === 0 && <tr><td colSpan="3" style={{ color: "var(--muted)" }}>No questions asked yet</td></tr>}
+              </tbody>
+            </table>
+            <div className="row"><button className="btn" onClick={() => setShowHistory(false)}>Close</button></div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AlertsPanel({ role }) {
+  const [alerts, setAlerts] = useState([]);
+  const [showNew, setShowNew] = useState(false);
+  const [historyFor, setHistoryFor] = useState(null);
+  const [history, setHistory] = useState([]);
+  const [form, setForm] = useState({ name: "", sql: "", value_column: "", operator: ">", threshold: "", schedule_cron: "", notify_webhook: "" });
+  const [err, setErr] = useState("");
+
+  const load = async () => setAlerts(await api("/api/alerts"));
+  useEffect(() => { load(); }, []);
+
+  const create = async () => {
+    if (!form.name || !form.sql || !form.value_column || !form.threshold) { setErr("Fill in name, SQL, column, and threshold"); return; }
+    try {
+      await api("/api/alerts", { method: "POST", body: JSON.stringify({ ...form, schedule_cron: form.schedule_cron || null, notify_webhook: form.notify_webhook || null }) });
+      setShowNew(false); setForm({ name: "", sql: "", value_column: "", operator: ">", threshold: "", schedule_cron: "", notify_webhook: "" });
+      load();
+    } catch (e) { setErr(e.message); }
+  };
+
+  const checkNow = async (id) => { await api(`/api/alerts/${id}/check`, { method: "POST" }); load(); };
+  const togglePause = async (id) => { await api(`/api/alerts/${id}/pause`, { method: "POST" }); load(); };
+  const remove = async (id) => { await api(`/api/alerts/${id}`, { method: "DELETE" }); load(); };
+  const viewHistory = async (a) => { setHistoryFor(a); setHistory(await api(`/api/alerts/${a.id}/history`)); };
+
+  return (
+    <div>
+      <div className="section-label" style={{ display: "flex", justifyContent: "space-between" }}>
+        <span>Alerts — get notified when a query result crosses a threshold</span>
+        {role !== "viewer" && <button className="new-btn" onClick={() => setShowNew(true)}>+ new</button>}
+      </div>
+      <table className="admin-table">
+        <thead><tr><th>Name</th><th>Condition</th><th>Status</th><th>Last value</th><th>Last checked</th><th></th></tr></thead>
+        <tbody>
+          {alerts.map(a => (
+            <tr key={a.id}>
+              <td>{a.name}{a.is_paused ? " (paused)" : ""}</td>
+              <td style={{ color: "var(--muted)" }}>{a.value_column} {a.operator} {a.threshold}</td>
+              <td><span className={"badge " + (a.last_status === "triggered" ? "failed" : a.last_status === "ok" ? "success" : "pending")}>{a.last_status}</span></td>
+              <td style={{ color: "var(--muted)" }}>{a.last_value ?? "—"}</td>
+              <td style={{ color: "var(--muted)" }}>{a.last_checked_at?.slice(0, 19).replace("T", " ") || "never"}</td>
+              <td style={{ whiteSpace: "nowrap" }}>
+                {role !== "viewer" && <button className="btn" style={{ padding: "2px 8px", marginRight: 4 }} onClick={() => checkNow(a.id)}>check now</button>}
+                <button className="btn" style={{ padding: "2px 8px", marginRight: 4 }} onClick={() => viewHistory(a)}>history</button>
+                {role !== "viewer" && <button className="btn" style={{ padding: "2px 8px", marginRight: 4 }} onClick={() => togglePause(a.id)}>{a.is_paused ? "resume" : "pause"}</button>}
+                {role === "admin" && <button className="btn danger" style={{ padding: "2px 8px" }} onClick={() => remove(a.id)}>delete</button>}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {alerts.length === 0 && <div className="empty-state" style={{ marginTop: 10 }}>No alerts yet</div>}
+
+      {historyFor && (
+        <div className="modal-backdrop" onClick={e => e.target === e.currentTarget && setHistoryFor(null)}>
+          <div className="modal" style={{ width: 460 }}>
+            <h3>History — "{historyFor.name}"</h3>
+            <table className="admin-table">
+              <thead><tr><th>When</th><th>Status</th><th>Value</th></tr></thead>
+              <tbody>
+                {history.map(h => (
+                  <tr key={h.id}>
+                    <td style={{ color: "var(--muted)" }}>{h.checked_at.slice(0, 19).replace("T", " ")}</td>
+                    <td><span className={"badge " + (h.status === "triggered" ? "failed" : h.status === "ok" ? "success" : "pending")}>{h.status}</span></td>
+                    <td>{h.value ?? "—"}</td>
+                  </tr>
+                ))}
+                {history.length === 0 && <tr><td colSpan="3" style={{ color: "var(--muted)" }}>No checks recorded yet</td></tr>}
+              </tbody>
+            </table>
+            <div className="row"><button className="btn" onClick={() => setHistoryFor(null)}>Close</button></div>
+          </div>
+        </div>
+      )}
+
+      {showNew && (
+        <div className="modal-backdrop" onClick={e => e.target === e.currentTarget && setShowNew(false)}>
+          <div className="modal">
+            <h3>New alert</h3>
+            <div className="field"><label>Name</label><input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></div>
+            <div className="field"><label>SQL (result's first row is checked)</label>
+              <textarea value={form.sql} onChange={e => setForm({ ...form, sql: e.target.value })} placeholder="SELECT COUNT(*) as failed_count FROM delta.`/data/curated` WHERE status = 'failed'" />
+            </div>
+            <div className="inline-form">
+              <input placeholder="column to watch (e.g. failed_count)" value={form.value_column} onChange={e => setForm({ ...form, value_column: e.target.value })} />
+              <select value={form.operator} onChange={e => setForm({ ...form, operator: e.target.value })}>
+                <option value=">">&gt;</option><option value="<">&lt;</option>
+                <option value=">=">&gt;=</option><option value="<=">&lt;=</option>
+                <option value="==">==</option><option value="!=">!=</option>
+              </select>
+              <input placeholder="threshold" value={form.threshold} onChange={e => setForm({ ...form, threshold: e.target.value })} />
+            </div>
+            <div className="field"><label>Schedule (cron, optional — leave blank for manual "check now" only)</label>
+              <input value={form.schedule_cron} onChange={e => setForm({ ...form, schedule_cron: e.target.value })} placeholder="*/15 * * * *" />
+            </div>
+            <div className="field"><label>Notify webhook (optional)</label>
+              <input value={form.notify_webhook} onChange={e => setForm({ ...form, notify_webhook: e.target.value })} placeholder="https://..." />
+            </div>
+            {err && <div className="err">{err}</div>}
+            <div className="row">
+              <button className="btn" onClick={() => setShowNew(false)}>Cancel</button>
+              <button className="btn primary" onClick={create}>Create alert</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PythonPanel({ role }) {
+  const [code, setCode] = useState(
+    "# 'tables' is a dict of {table_name: path} for everything in the Data tab\n" +
+    "from deltalake import DeltaTable\n" +
+    "import pandas as pd\n\n" +
+    "# example: list what's available, then load one\n" +
+    "print('available tables:', list(tables.keys()))\n\n" +
+    "# df = DeltaTable(tables['your_table_name']).to_pandas()\n" +
+    "# print(df.describe())\n" +
+    "# task_output = {'rows': len(df)}  # shows up below, and can be reused by workflow tasks"
+  );
+  const [result, setResult] = useState(null);
+  const [busy, setBusy] = useState(false);
+
+  const run = async () => {
+    setBusy(true); setResult(null);
+    try {
+      const res = await api("/api/python/run", { method: "POST", body: JSON.stringify({ code }) });
+      setResult(res);
+    } catch (e) { setResult({ success: false, logs: e.message, output: {} }); } finally { setBusy(false); }
+  };
+
+  return (
+    <div>
+      <div className="section-label">Python — quick analysis, in-process</div>
+      <p style={{ color: "var(--muted)", fontSize: 12.5, marginTop: -4 }}>
+        Runs immediately (not distributed) with pandas + deltalake preinstalled — good for
+        exploring onboarded tables and quick analysis. For large-scale distributed
+        processing, use a <code>spark_submit</code> task in a workflow instead.
+      </p>
+      <textarea value={code} onChange={e => setCode(e.target.value)} spellCheck="false" style={{ height: 220 }} />
+      <div style={{ marginTop: 10 }}>
+        <button className="btn primary" onClick={run} disabled={busy || role === "viewer"}>
+          {busy ? "Running..." : "Run"}
+        </button>
+      </div>
+      {result && (
+        <div style={{ marginTop: 14 }}>
+          <div className={"badge " + (result.success ? "success" : "failed")} style={{ marginBottom: 8 }}>
+            {result.success ? "success" : "error"}
+          </div>
+          <pre className="logs">{result.logs?.trim() || "(no output)"}</pre>
+          {result.output && Object.keys(result.output).length > 0 && (
+            <pre className="logs" style={{ color: "var(--blue)" }}>{"task_output → " + JSON.stringify(result.output)}</pre>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function FeatureStorePanel() {
+  const [tables, setTables] = useState([]);
+  useEffect(() => { api("/api/feature-tables").then(setTables); }, []);
+  return (
+    <div>
+      <div className="section-label">Feature Store — tables tagged for ML feature reuse</div>
+      <p style={{ color: "var(--muted)", fontSize: 12.5, marginTop: -4 }}>
+        Tag any table as a "feature table" in the Data tab to have it show up here. Join
+        feature tables to a labels table on their entity key for point-in-time correct
+        training sets — see <code>spark_jobs/point_in_time_join.py</code>.
+      </p>
+      <table className="admin-table">
+        <thead><tr><th>Name</th><th>Entity key</th><th>Timestamp key</th><th>Rows</th></tr></thead>
+        <tbody>
+          {tables.map(t => (
+            <tr key={t.id}>
+              <td>{t.name}</td>
+              <td style={{ color: "var(--muted)" }}>{t.entity_key || "—"}</td>
+              <td style={{ color: "var(--muted)" }}>{t.timestamp_key || "—"}</td>
+              <td style={{ color: "var(--muted)" }}>{t.row_count ?? "—"}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {tables.length === 0 && <div className="empty-state" style={{ marginTop: 10 }}>No feature tables tagged yet</div>}
+    </div>
+  );
+}
+
+function DashboardsPanel({ role }) {
+  const [dashboards, setDashboards] = useState([]);
+  const [selected, setSelected] = useState(null);
+  const [results, setResults] = useState(null);
+  const [showNew, setShowNew] = useState(false);
+  const [newName, setNewName] = useState("");
+  const [tiles, setTiles] = useState([{ title: "", sql: "" }]);
+  const [busy, setBusy] = useState(false);
+
+  const load = async () => setDashboards(await api("/api/dashboards"));
+  useEffect(() => { load(); }, []);
+
+  const view = async (d) => {
+    setSelected(d); setResults(null); setBusy(true);
+    try { setResults(await api(`/api/dashboards/${d.id}/refresh`, { method: "POST" })); }
+    finally { setBusy(false); }
+  };
+
+  const createDashboard = async () => {
+    if (!newName || tiles.every(t => !t.sql)) return;
+    await api("/api/dashboards", { method: "POST", body: JSON.stringify({ name: newName, tiles: tiles.filter(t => t.sql) }) });
+    setShowNew(false); setNewName(""); setTiles([{ title: "", sql: "" }]);
+    load();
+  };
+
+  return (
+    <div>
+      <div className="section-label" style={{ display: "flex", justifyContent: "space-between" }}>
+        <span>Dashboards — save multiple SQL charts together</span>
+        {role !== "viewer" && <button className="new-btn" onClick={() => setShowNew(true)}>+ new</button>}
+      </div>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 14 }}>
+        {dashboards.map(d => (
+          <button key={d.id} className={"btn" + (selected?.id === d.id ? " primary" : "")} onClick={() => view(d)}>{d.name}</button>
+        ))}
+        {dashboards.length === 0 && <div className="empty-state">No dashboards yet</div>}
+      </div>
+
+      {busy && <p style={{ color: "var(--muted)", fontSize: 12.5 }}>Refreshing tiles...</p>}
+      {results && results.tiles.map(tile => (
+        <div key={tile.tile_id} className="dag-panel" style={{ marginBottom: 14 }}>
+          <div style={{ fontWeight: 600, marginBottom: 8 }}>{tile.title}</div>
+          {!tile.success && <div className="err">{tile.error}</div>}
+          {tile.success && (
+            <React.Fragment>
+              <table className="admin-table">
+                <thead><tr>{tile.columns.map(c => <th key={c}>{c}</th>)}</tr></thead>
+                <tbody>
+                  {tile.rows.slice(0, 10).map((row, i) => (
+                    <tr key={i}>{tile.columns.map(c => <td key={c}>{String(row[c])}</td>)}</tr>
+                  ))}
+                </tbody>
+              </table>
+              {tile.chart_type === "bar" && <SimpleBarChart columns={tile.columns} rows={tile.rows} />}
+            </React.Fragment>
+          )}
+        </div>
+      ))}
+
+      {showNew && (
+        <div className="modal-backdrop" onClick={e => e.target === e.currentTarget && setShowNew(false)}>
+          <div className="modal">
+            <h3>New dashboard</h3>
+            <div className="field"><label>Name</label><input value={newName} onChange={e => setNewName(e.target.value)} /></div>
+            {tiles.map((t, i) => (
+              <div key={i} style={{ marginBottom: 10 }}>
+                <input placeholder="tile title" value={t.title} style={{ marginBottom: 4, width: "100%" }}
+                       onChange={e => setTiles(tiles.map((x, xi) => xi === i ? { ...x, title: e.target.value } : x))} />
+                <textarea placeholder="SQL" value={t.sql} style={{ height: 70 }}
+                          onChange={e => setTiles(tiles.map((x, xi) => xi === i ? { ...x, sql: e.target.value } : x))} />
+              </div>
+            ))}
+            <button className="btn" onClick={() => setTiles([...tiles, { title: "", sql: "" }])}>+ add tile</button>
+            <div className="row">
+              <button className="btn" onClick={() => setShowNew(false)}>Cancel</button>
+              <button className="btn primary" onClick={createDashboard}>Create</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ModelsPanel({ role }) {
+  const [deployments, setDeployments] = useState([]);
+  const [modelName, setModelName] = useState("");
+  const [modelVersion, setModelVersion] = useState("latest");
+  const [predictInput, setPredictInput] = useState('{"dataframe_records": [{}]}');
+  const [predictOutput, setPredictOutput] = useState(null);
+  const [predictingId, setPredictingId] = useState(null);
+  const [err, setErr] = useState("");
+
+  const load = async () => setDeployments(await api("/api/models/deployments"));
+  useEffect(() => { load(); }, []);
+
+  const deploy = async () => {
+    if (!modelName) return;
+    setErr("");
+    try {
+      await api("/api/models/deploy", { method: "POST", body: JSON.stringify({ model_name: modelName, model_version: modelVersion }) });
+      setModelName(""); load();
+    } catch (e) { setErr(e.message); }
+  };
+  const stop = async (id) => { await api(`/api/models/deployments/${id}`, { method: "DELETE" }); load(); };
+  const predict = async (id) => {
+    setPredictOutput(null);
+    try { setPredictOutput(await api(`/api/models/${id}/predict`, { method: "POST", body: predictInput })); }
+    catch (e) { setPredictOutput({ error: e.message }); }
+  };
+
+  return (
+    <div>
+      <div className="section-label">Models — serve an MLflow-registered model</div>
+      <p style={{ color: "var(--muted)", fontSize: 12.5, marginTop: -4 }}>
+        Deploys a model already registered in MLflow (see the ML tracking examples) as a
+        live prediction endpoint. Single instance — no rolling updates or replicas.
+      </p>
+      {role !== "viewer" && (
+        <div className="inline-form">
+          <input placeholder="registered model name" value={modelName} onChange={e => setModelName(e.target.value)} />
+          <input placeholder="version (or 'latest')" value={modelVersion} onChange={e => setModelVersion(e.target.value)} />
+          <button className="btn primary" onClick={deploy}>Deploy</button>
+        </div>
+      )}
+      {err && <div className="err">{err}</div>}
+      <table className="admin-table">
+        <thead><tr><th>Model</th><th>Version</th><th>Status</th><th></th></tr></thead>
+        <tbody>
+          {deployments.map(d => (
+            <React.Fragment key={d.id}>
+              <tr>
+                <td>{d.model_name}</td>
+                <td style={{ color: "var(--muted)" }}>{d.model_version}</td>
+                <td><span className={"badge " + (d.status === "running" ? "success" : "failed")}>{d.status}</span></td>
+                <td style={{ whiteSpace: "nowrap" }}>
+                  <button className="btn" style={{ padding: "2px 8px", marginRight: 4 }} onClick={() => setPredictingId(predictingId === d.id ? null : d.id)}>test</button>
+                  {role === "admin" && <button className="btn danger" style={{ padding: "2px 8px" }} onClick={() => stop(d.id)}>stop</button>}
+                </td>
+              </tr>
+              {predictingId === d.id && (
+                <tr><td colSpan="4">
+                  <textarea value={predictInput} onChange={e => setPredictInput(e.target.value)} style={{ height: 70 }} />
+                  <button className="btn primary" style={{ marginTop: 6 }} onClick={() => predict(d.id)}>Send</button>
+                  {predictOutput && <pre className="logs">{JSON.stringify(predictOutput, null, 2)}</pre>}
+                </td></tr>
+              )}
+            </React.Fragment>
+          ))}
+        </tbody>
+      </table>
+      {deployments.length === 0 && <div className="empty-state" style={{ marginTop: 10 }}>No models deployed yet</div>}
+    </div>
+  );
+}
+
+function ClusterPanel() {
+  const [status, setStatus] = useState(null);
+  const [autoscale, setAutoscale] = useState(null);
+  useEffect(() => {
+    const load = () => {
+      api("/api/cluster/status").then(setStatus).catch(() => {});
+      api("/api/cluster/autoscaler/status").then(setAutoscale).catch(() => {});
+    };
+    load();
+    const id = setInterval(load, 5000);
+    return () => clearInterval(id);
+  }, []);
+
+  return (
+    <div>
+      <div className="section-label">Cluster — live Spark status</div>
+      <p style={{ color: "var(--muted)", fontSize: 12.5, marginTop: -4 }}>
+        Read-only visibility into the real Spark cluster. To change capacity manually, run:
+        <code> docker compose up --scale spark-worker-1=N</code> from a terminal, or enable
+        the auto-scale controller below (still bounded by this machine's physical
+        CPU/RAM — see its note for why that's not the same as cloud elasticity).
+      </p>
+      {!status?.reachable && <div className="empty-state">Cluster unreachable{status?.error ? `: ${status.error}` : ""}</div>}
+      {status?.reachable && (
+        <React.Fragment>
+          <div style={{ display: "flex", gap: 20, marginBottom: 16, fontFamily: "IBM Plex Mono", fontSize: 12.5 }}>
+            <div>Cores: {status.cores_used}/{status.cores_total}</div>
+            <div>Memory: {status.memory_used_mb}MB/{status.memory_total_mb}MB</div>
+            <div>Running apps: {status.running_apps}</div>
+            <div>Completed apps: {status.completed_apps}</div>
+          </div>
+          <table className="admin-table">
+            <thead><tr><th>Worker</th><th>State</th><th>Cores used</th><th>Memory used</th></tr></thead>
+            <tbody>
+              {status.workers.map(w => (
+                <tr key={w.id}>
+                  <td>{w.id}</td>
+                  <td><span className={"badge " + (w.state === "ALIVE" ? "success" : "failed")}>{w.state}</span></td>
+                  <td style={{ color: "var(--muted)" }}>{w.coresused}/{w.cores}</td>
+                  <td style={{ color: "var(--muted)" }}>{w.memoryused}/{w.memory}MB</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </React.Fragment>
+      )}
+
+      <div className="section-label" style={{ marginTop: 24 }}>Auto-scale controller</div>
+      {!autoscale?.enabled && (
+        <p style={{ color: "var(--muted)", fontSize: 12.5 }}>
+          Disabled. Set <code>ATLASFLOW_AUTOSCALE_ENABLED=true</code> in your <code>.env</code>
+          (requires the docker.sock mount — see SECURITY.md for the tradeoff) and restart to enable it.
+        </p>
+      )}
+      {autoscale?.enabled && (
+        <div style={{ fontFamily: "IBM Plex Mono", fontSize: 12.5, color: "var(--muted)" }}>
+          <div>extra workers: {autoscale.current_extra_workers} (range {autoscale.min_workers}–{autoscale.max_workers})</div>
+          <div>last action: {autoscale.last_action}</div>
+          <div>last action at: {autoscale.last_action_at?.replace("T", " ").slice(0, 19) || "—"}</div>
+          {autoscale.last_error && <div className="err">controller error: {autoscale.last_error}</div>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function BillingPanel({ role }) {
+  const [config, setConfig] = useState(null);
+  const [report, setReport] = useState([]);
+  const [groupBy, setGroupBy] = useState("user");
+  const [checkoutErr, setCheckoutErr] = useState("");
+
+  const loadReport = async (g) => setReport(await api(`/api/billing/usage-report?group_by=${g}`));
+  useEffect(() => {
+    api("/api/billing/config").then(setConfig).catch(() => {});
+    if (role === "admin") loadReport(groupBy);
+  }, [groupBy, role]);
+
+  const checkout = async () => {
+    setCheckoutErr("");
+    try {
+      const res = await api("/api/billing/checkout", { method: "POST" });
+      window.location.href = res.url;
+    } catch (e) { setCheckoutErr(e.message); }
+  };
+
+  const downloadCsv = () => {
+    window.location.href = `${API_BASE}/api/billing/usage-report?group_by=${groupBy}&format=csv`;
+  };
+
+  return (
+    <div>
+      <div className="section-label">Billing — usage reports and (optional) real payment collection</div>
+      <p style={{ color: "var(--muted)", fontSize: 12.5, marginTop: -4 }}>
+        Cost figures are a self-hosted usage estimate (configurable $/worker-hour), not
+        vendor billing. If Stripe is configured, you can also subscribe to actual metered
+        billing — real charges, via Stripe.
+      </p>
+      {config?.stripe_enabled ? (
+        <button className="btn primary" onClick={checkout}>Set up billing (Stripe Checkout)</button>
+      ) : (
+        <p style={{ color: "var(--muted)", fontSize: 12, fontFamily: "IBM Plex Mono" }}>
+          Stripe billing not configured — set ATLASFLOW_STRIPE_SECRET_KEY / ATLASFLOW_STRIPE_PRICE_ID to enable.
+        </p>
+      )}
+      {checkoutErr && <div className="err">{checkoutErr}</div>}
+
+      {role === "admin" && (
+        <React.Fragment>
+          <div className="section-label" style={{ marginTop: 20, display: "flex", justifyContent: "space-between" }}>
+            <span>Usage report</span>
+            <span>
+              <select value={groupBy} onChange={e => setGroupBy(e.target.value)} style={{ marginRight: 8 }}>
+                <option value="user">By user</option>
+                <option value="workflow">By workflow</option>
+              </select>
+              <button className="btn" onClick={downloadCsv}>Export CSV</button>
+            </span>
+          </div>
+          <table className="admin-table">
+            <thead><tr><th>{groupBy === "user" ? "User" : "Workflow"}</th><th>Total cost (est.)</th><th>Runs</th></tr></thead>
+            <tbody>
+              {report.map(r => (
+                <tr key={r.group}><td>{r.group}</td><td>${r.total_cost_usd}</td><td>{r.run_count}</td></tr>
+              ))}
+            </tbody>
+          </table>
+          {report.length === 0 && <div className="empty-state" style={{ marginTop: 10 }}>No usage recorded yet</div>}
+        </React.Fragment>
+      )}
+    </div>
+  );
+}
+
+function SqlPanel({ role }) {
+  const [sql, setSql] = useState("SELECT region, SUM(total_sales) as total\nFROM delta.`/data/curated`\nGROUP BY region");
+  const [result, setResult] = useState(null);
+  const [err, setErr] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [history, setHistory] = useState([]);
+  const [showHistory, setShowHistory] = useState(false);
+  const [paramValues, setParamValues] = useState({});
+
+  // auto-detect :paramName tokens in the query, the same way Databricks auto-creates a
+  // widget for each named parameter used in a query
+  const detectedParams = Array.from(new Set((sql.match(/(?<!:):([a-zA-Z_][a-zA-Z0-9_]*)/g) || []).map(p => p.slice(1))));
+
+  const loadHistory = async () => setHistory(await api("/api/sql/history"));
+
+  const run = async () => {
+    setBusy(true); setErr(""); setResult(null);
+    try {
+      const res = await api("/api/sql/query", { method: "POST", body: JSON.stringify({ sql, limit: 200, params: paramValues }) });
+      setResult(res);
+    } catch (e) { setErr(e.message); } finally { setBusy(false); }
+  };
+
+  return (
+    <div>
+      <div className="section-label" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <span>SQL — query Delta tables in the lakehouse</span>
+        <button className="new-btn" onClick={() => { setShowHistory(!showHistory); if (!showHistory) loadHistory(); }}>
+          {showHistory ? "hide history" : "history"}
+        </button>
+      </div>
+      <p style={{ color: "var(--muted)", fontSize: 12.5, marginTop: -4 }}>
+        Runs via the real Spark cluster with Delta Lake enabled — the same engine backing the
+        `sql` task type. Reference a table you onboarded in the Data tab by name, or a raw path
+        like <code>delta.`/data/curated`</code>. Use <code>:paramName</code> in your query to
+        get an input box for it below, automatically.
+      </p>
+      {showHistory && (
+        <table className="admin-table" style={{ marginBottom: 14 }}>
+          <thead><tr><th>When</th><th>User</th><th>Query</th><th></th></tr></thead>
+          <tbody>
+            {history.map(h => (
+              <tr key={h.id}>
+                <td style={{ color: "var(--muted)" }}>{h.timestamp?.slice(0, 19).replace("T", " ")}</td>
+                <td>{h.username || "—"}</td>
+                <td style={{ maxWidth: 280, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{h.sql}</td>
+                <td><button className="btn" style={{ padding: "2px 8px" }} onClick={() => { setSql(h.sql); setShowHistory(false); }}>load</button></td>
+              </tr>
+            ))}
+            {history.length === 0 && <tr><td colSpan="4" style={{ color: "var(--muted)" }}>No queries run yet</td></tr>}
+          </tbody>
+        </table>
+      )}
+      <textarea value={sql} onChange={e => setSql(e.target.value)} spellCheck="false" style={{ height: 120 }} />
+      {detectedParams.length > 0 && (
+        <div className="inline-form" style={{ marginTop: 10 }}>
+          {detectedParams.map(p => (
+            <div key={p} className="field" style={{ marginBottom: 0 }}>
+              <label>{p}</label>
+              <input value={paramValues[p] || ""} onChange={e => setParamValues({ ...paramValues, [p]: e.target.value })} style={{ width: 140 }} />
+            </div>
+          ))}
+        </div>
+      )}
+      <div style={{ marginTop: 10 }}>
+        <button className="btn primary" onClick={run} disabled={busy || role === "viewer"}>
+          {busy ? "Running..." : "Run query"}
+        </button>
+      </div>
+      {err && <div className="err" style={{ marginTop: 10 }}>{err}</div>}
+      {result && (
+        <div style={{ marginTop: 16, overflowX: "auto" }}>
+          <div style={{ color: "var(--muted)", fontSize: 11.5, fontFamily: "IBM Plex Mono", marginBottom: 6 }}>
+            {result.row_count} row{result.row_count === 1 ? "" : "s"}
+          </div>
+          <table className="admin-table">
+            <thead><tr>{result.columns.map(c => <th key={c}>{c}</th>)}</tr></thead>
+            <tbody>
+              {result.rows.map((row, i) => (
+                <tr key={i}>{result.columns.map(c => <td key={c}>{String(row[c])}</td>)}</tr>
+              ))}
+            </tbody>
+          </table>
+          <SimpleBarChart columns={result.columns} rows={result.rows} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function App({ user, onLogout }) {
+  const [tab, setTab] = useState("workflows");
+  const [workflows, setWorkflows] = useState([]);
+  const [selectedId, setSelectedId] = useState(null);
+  const [runs, setRuns] = useState([]);
+  const [selectedRun, setSelectedRun] = useState(null);
+  const [showModal, setShowModal] = useState(false);
+  const pollRef = useRef(null);
+  const canEdit = user && (user.role === "editor" || user.role === "admin");
+  const canAdmin = user && user.role === "admin";
+
+  const loadWorkflows = useCallback(async () => {
+    const wfs = await api("/api/workflows");
+    setWorkflows(wfs);
+    if (!selectedId && wfs.length) setSelectedId(wfs[0].id);
+  }, [selectedId]);
+
+  const loadRuns = useCallback(async (wfId) => {
+    if (!wfId) return;
+    const rs = await api(`/api/workflows/${wfId}/runs`);
+    setRuns(rs);
+    setSelectedRun(prev => {
+      if (!prev) return rs[0] || null;
+      const updated = rs.find(r => r.id === prev.id);
+      return updated || rs[0] || null;
+    });
+  }, []);
+
+  useEffect(() => { loadWorkflows(); }, []);
+  useEffect(() => { loadRuns(selectedId); }, [selectedId]);
+
+  // poll for status updates while any run is active
+  useEffect(() => {
+    clearInterval(pollRef.current);
+    pollRef.current = setInterval(() => {
+      loadRuns(selectedId);
+      loadWorkflows();
+    }, 2000);
+    return () => clearInterval(pollRef.current);
+  }, [selectedId, loadRuns, loadWorkflows]);
+
+  const selectedWf = workflows.find(w => w.id === selectedId);
+
+  const trigger = async () => {
+    await api(`/api/workflows/${selectedId}/trigger`, { method: "POST" });
+    loadRuns(selectedId);
+  };
+  const togglePause = async () => {
+    await api(`/api/workflows/${selectedId}/pause`, { method: "POST" });
+    loadWorkflows();
+  };
+  const cloneWorkflow = async () => {
+    const cloned = await api(`/api/workflows/${selectedId}/clone`, { method: "POST" });
+    await loadWorkflows();
+    setSelectedId(cloned.id);
+  };
+  const remove = async () => {
+    if (!confirm(`Delete workflow "${selectedWf.name}"?`)) return;
+    await api(`/api/workflows/${selectedId}`, { method: "DELETE" });
+    setSelectedId(null);
+    loadWorkflows();
+  };
+
+  const latestStatus = (wf) => {
+    // best-effort: not fetched per-item to keep list light; sidebar shows pause state only
+    return wf.is_paused ? "pending" : null;
+  };
+
+  return (
+    <React.Fragment>
+      <div className="topbar">
+        <span className="logo">ATLAS<span className="dot">·</span>FLOW</span>
+        <span className="sub">workflow orchestrator</span>
+        <span className="user-chip">
+          {user?.username} <span className="role-pill">{user?.role}</span>
+          <button className="logout-btn" onClick={onLogout}>sign out</button>
+        </span>
+      </div>
+      <div className="layout">
+        <div className="sidebar">
+          <div className="nav-tabs">
+            <button className={"nav-tab" + (tab === "workflows" ? " active" : "")} onClick={() => setTab("workflows")}>Workflows</button>
+            <button className={"nav-tab" + (tab === "data" ? " active" : "")} onClick={() => setTab("data")}>Data</button>
+            <button className={"nav-tab" + (tab === "volumes" ? " active" : "")} onClick={() => setTab("volumes")}>Volumes</button>
+            <button className={"nav-tab" + (tab === "sql" ? " active" : "")} onClick={() => setTab("sql")}>SQL</button>
+            <button className={"nav-tab" + (tab === "python" ? " active" : "")} onClick={() => setTab("python")}>Python</button>
+            <button className={"nav-tab" + (tab === "dashboards" ? " active" : "")} onClick={() => setTab("dashboards")}>Dashboards</button>
+            <button className={"nav-tab" + (tab === "features" ? " active" : "")} onClick={() => setTab("features")}>Feature Store</button>
+            <button className={"nav-tab" + (tab === "models" ? " active" : "")} onClick={() => setTab("models")}>Models</button>
+            <button className={"nav-tab" + (tab === "cluster" ? " active" : "")} onClick={() => setTab("cluster")}>Cluster</button>
+            <button className={"nav-tab" + (tab === "alerts" ? " active" : "")} onClick={() => setTab("alerts")}>Alerts</button>
+            <button className={"nav-tab" + (tab === "genie" ? " active" : "")} onClick={() => setTab("genie")}>Genie</button>
+            <button className={"nav-tab" + (tab === "notebooks" ? " active" : "")} onClick={() => setTab("notebooks")}>Notebooks</button>
+            <button className={"nav-tab" + (tab === "ingestion" ? " active" : "")} onClick={() => setTab("ingestion")}>Ingestion</button>
+            <button className={"nav-tab" + (tab === "lakebase" ? " active" : "")} onClick={() => setTab("lakebase")}>Lakebase</button>
+            <button className={"nav-tab" + (tab === "sharing" ? " active" : "")} onClick={() => setTab("sharing")}>Sharing</button>
+            <button className={"nav-tab" + (tab === "pipelines" ? " active" : "")} onClick={() => setTab("pipelines")}>Pipelines</button>
+            <button className={"nav-tab" + (tab === "policies" ? " active" : "")} onClick={() => setTab("policies")}>Policies</button>
+            <button className={"nav-tab" + (tab === "ai-gateway" ? " active" : "")} onClick={() => setTab("ai-gateway")}>AI Gateway</button>
+            <button className={"nav-tab" + (tab === "playground" ? " active" : "")} onClick={() => setTab("playground")}>Playground</button>
+            <button className={"nav-tab" + (tab === "git" ? " active" : "")} onClick={() => setTab("git")}>Git</button>
+            <button className={"nav-tab" + (tab === "tokens" ? " active" : "")} onClick={() => setTab("tokens")}>Tokens</button>
+            <button className={"nav-tab" + (tab === "billing" ? " active" : "")} onClick={() => setTab("billing")}>Billing</button>
+            <button className={"nav-tab" + (tab === "secrets" ? " active" : "")} onClick={() => setTab("secrets")}>Secrets</button>
+            {canAdmin && <button className={"nav-tab" + (tab === "users" ? " active" : "")} onClick={() => setTab("users")}>Users</button>}
+            {canAdmin && <button className={"nav-tab" + (tab === "audit" ? " active" : "")} onClick={() => setTab("audit")}>Audit</button>}
+          </div>
+          {tab === "workflows" && (
+            <React.Fragment>
+              <div className="sidebar-header">
+                <span>Workflows</span>
+                {canEdit && <button className="new-btn" onClick={() => setShowModal(true)}>+ new</button>}
+              </div>
+              {workflows.map(wf => (
+                <div key={wf.id} className={"wf-item" + (wf.id === selectedId ? " active" : "")} onClick={() => setSelectedId(wf.id)}>
+                  <div className="name">
+                    <span className={"status-dot" + (wf.last_run_status ? " " + wf.last_run_status : "")}></span>
+                    {wf.name}
+                  </div>
+                  <div className="meta">
+                    {wf.schedule_cron || "manual only"}{wf.is_paused ? " · paused" : ""}
+                    {wf.next_run_at && !wf.is_paused ? ` · next: ${wf.next_run_at.slice(0, 16).replace("T", " ")}` : ""}
+                  </div>
+                </div>
+              ))}
+              {workflows.length === 0 && <div className="empty-state">No workflows yet</div>}
+            </React.Fragment>
+          )}
+        </div>
+
+        <div className="main">
+          {tab === "data" && <DataPanel role={user?.role} />}
+          {tab === "volumes" && <VolumesPanel role={user?.role} />}
+          {tab === "sql" && <SqlPanel role={user?.role} />}
+          {tab === "python" && <PythonPanel role={user?.role} />}
+          {tab === "dashboards" && <DashboardsPanel role={user?.role} />}
+          {tab === "features" && <FeatureStorePanel />}
+          {tab === "models" && <ModelsPanel role={user?.role} />}
+          {tab === "cluster" && <ClusterPanel />}
+          {tab === "alerts" && <AlertsPanel role={user?.role} />}
+          {tab === "genie" && <GeniePanel role={user?.role} />}
+          {tab === "notebooks" && <NotebooksPanel role={user?.role} />}
+          {tab === "ingestion" && <IngestionPanel role={user?.role} />}
+          {tab === "lakebase" && <LakebasePanel role={user?.role} />}
+          {tab === "sharing" && <SharingPanel role={user?.role} />}
+          {tab === "pipelines" && <PipelinesPanel role={user?.role} />}
+          {tab === "policies" && <PoliciesPanel role={user?.role} />}
+          {tab === "ai-gateway" && <AIGatewayPanel role={user?.role} />}
+          {tab === "playground" && <PlaygroundPanel role={user?.role} />}
+          {tab === "git" && <GitReposPanel role={user?.role} />}
+          {tab === "tokens" && <TokensPanel />}
+          {tab === "billing" && <BillingPanel role={user?.role} />}
+          {tab === "secrets" && <SecretsPanel role={user?.role} />}
+          {tab === "users" && canAdmin && <UsersPanel />}
+          {tab === "audit" && canAdmin && <AuditPanel />}
+
+          {tab === "workflows" && !selectedWf && <div className="empty-state">Select or create a workflow to get started</div>}
+          {tab === "workflows" && selectedWf && (
+            <React.Fragment>
+              <div className="breadcrumb">
+                <a onClick={() => setSelectedId(null)}>Workflows</a>
+                <span className="sep">/</span>
+                <span className="current">{selectedWf.name}</span>
+              </div>
+              <div className="wf-title-row">
+                <div>
+                  <div className="wf-title">{selectedWf.name}</div>
+                  <div className="wf-desc">{selectedWf.description}</div>
+                </div>
+                {canEdit && (
+                  <div className="actions">
+                    <button className="btn primary" onClick={trigger}>Run now</button>
+                    <button className="btn" onClick={togglePause}>{selectedWf.is_paused ? "Resume" : "Pause"}</button>
+                    <button className="btn" onClick={cloneWorkflow}>Clone</button>
+                    {canAdmin && <button className="btn danger" onClick={remove}>Delete</button>}
+                  </div>
+                )}
+              </div>
+
+              <div className="section-label">DAG</div>
+              <div className="dag-panel">
+                <DagGraph tasks={selectedWf.tasks} run={selectedRun} />
+              </div>
+
+              <div className="section-label">Run history</div>
+              <div className="runs-list">
+                {runs.map(r => (
+                  <div key={r.id} className={"run-row" + (selectedRun && selectedRun.id === r.id ? " selected" : "")} onClick={() => setSelectedRun(r)}>
+                    <span className={"badge " + r.status}>{r.status}</span>
+                    <span style={{ fontFamily: "IBM Plex Mono", color: "var(--muted)" }}>{r.triggered_by}</span>
+                    {r.estimated_cost_usd > 0 && <span style={{ fontFamily: "IBM Plex Mono", color: "var(--muted)" }}>${r.estimated_cost_usd}</span>}
+                    <span style={{ marginLeft: "auto", color: "var(--muted)", fontFamily: "IBM Plex Mono" }}>{r.started_at?.replace("T", " ").slice(0, 19)}</span>
+                  </div>
+                ))}
+                {runs.length === 0 && <div className="empty-state" style={{ marginTop: 10 }}>No runs yet{canEdit ? ' — click "Run now"' : ""}</div>}
+              </div>
+
+              {selectedRun && (
+                <div className="run-detail">
+                  <div className="section-label">Task runs — {selectedRun.id.slice(0, 8)}</div>
+                  {selectedRun.task_runs.map(tr => (
+                    <div key={tr.id}>
+                      <div className={"task-row " + tr.status}>
+                        <span className={"badge " + tr.status}>{tr.status}</span>
+                        <span>{tr.task_key}</span>
+                        <span style={{ color: "var(--muted)" }}>attempt {tr.attempt || 1}</span>
+                      </div>
+                      {tr.logs && <pre className="logs">{tr.logs.trim()}</pre>}
+                      {tr.output && Object.keys(tr.output).length > 0 && (
+                        <pre className="logs" style={{ color: "var(--blue)" }}>{"output → " + JSON.stringify(tr.output)}</pre>
+                      )}
+                    </div>
+                  ))}
+                  <RunComments runId={selectedRun.id} />
+                </div>
+              )}
+            </React.Fragment>
+          )}
+        </div>
+      </div>
+      {showModal && <NewWorkflowModal onClose={() => setShowModal(false)} onCreated={() => { setShowModal(false); loadWorkflows(); }} />}
+    </React.Fragment>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<Shell />);
+</script>
+</body>
+</html>
